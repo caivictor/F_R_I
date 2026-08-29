@@ -10,9 +10,28 @@ A standalone web application powered by a multi-agent AI system. The application
 ## 2. Core Architecture & Agent Definitions
 
 - **Manager Agent (Model: Gemini Pro Latest):**
-  - **Role:** Orchestrator and primary user interface.
-  - **Responsibilities:** Receives manual triggers/prompts from the user via chat, coordinates sub-agents, tracks task progression, and ensures system stability.
-  - **Error Handling:** If a sub-agent gets stuck, it dynamically retries with adjusted prompts and approaches up to 3 times before alerting the user in the chat UI for manual intervention.
+  - **Role:** Master Orchestrator, User Interface Proxy, & System Supervisor.
+  - **Core Responsibilities:**
+    1. **Intelligent Intent Routing & Workflow Chaining:**
+       - Natively parses free-form natural language to identify intent and route tasks to the appropriate sub-agent(s):
+         - *Market exploration / news query* -> Delegates to **Research Agent**.
+         - *Specific ticker / company deep dive* -> Delegates directly to **Analysis Agent**.
+         - *Portfolio balance, performance, or trade execution* -> Delegates to **Investment Agent**.
+         - *End-to-End Discovery Pipeline* (e.g., "Find top tech stories and analyze promising stocks") -> Automatically orchestrates a sequential chain: **Research -> Analysis -> Investment recommendation**.
+    2. **Trade Confirmation Guardrail (Safety Interlock):**
+       - Intercepts all trade/order intents (e.g., "Buy 10 shares of NVDA").
+       - Queries the Investment Agent for current market pricing and available cash balance.
+       - Generates an explicit, clear two-step confirmation prompt to the user (e.g., *"You have $5,000 cash. Buying 10 shares of NVDA at $125/share will cost ~$1,250. Confirm purchase? [Yes / No]"*) before instructing the Investment Agent to execute.
+    3. **Conversational Memory & Pronoun/Entity Resolution:**
+       - Retains conversational context across multi-turn dialogues, correctly resolving references and pronouns (e.g., "Analyze Apple" followed by "What is its cost basis in my portfolio?" or "Buy 15 shares of it").
+    4. **Multi-Agent Synthesis & Executive Briefings:**
+       - Ingests raw analytical reports, tables, and news digests from sub-agents and synthesizes them into concise, structured executive summaries before presenting them to the user.
+    5. **Self-Healing & Unsticking Engine:**
+       - Monitors sub-agent execution state and handles exceptions (e.g., RSS timeout, ambiguous ticker, missing financial statement fields).
+       - Automatically retries failed sub-agent tasks up to 3 times with dynamically adjusted prompts, query rephrasing, or fallback parameters.
+       - If a failure persists after 3 retries, gracefully reports the root cause in the chat UI and requests user clarification instead of crashing.
+    6. **Real-Time Step-by-Step Status Broadcasting:**
+       - Emits real-time progress events to the web UI to provide transparency during multi-step runs (e.g., `[Manager] Initiating news scan with Research Agent...` -> `[Manager] Handing off AAPL to Analysis Agent...`).
 
 - **Research Agent (Model: Gemini Flash Latest):**
   - **Role:** Financial Data & News Gatherer.
