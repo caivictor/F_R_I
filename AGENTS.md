@@ -21,7 +21,7 @@ commands: if the edit tool would deny a file, do not modify that file any other 
 
 ## Repository conventions
 
-- **Version Control (Git & GitHub):** All changes must be tracked in Git. The team must:
+- **Version Control (Git & GitHub):** Repository is `https://github.com/caivictor/F_R_I.git`. All changes must be tracked in Git. The team must:
   1. Create a new branch for each phase or major feature.
   2. Make small, logical commits with clear messages.
   3. Use the `gh` CLI to create Pull Requests for review before merging into the main branch.

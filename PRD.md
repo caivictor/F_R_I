@@ -33,7 +33,7 @@ A standalone web application powered by a multi-agent AI system. The application
 
 ## 4. Technical Stack & Environment Constraints
 - **Target Environment:** Ubuntu 24.04 (User's laptop/host).
-- **Version Control:** Git and GitHub. The project must be initialized as a Git repository. All phases must be developed on separate branches and merged via GitHub Pull Requests.
+- **Version Control:** Git and GitHub. The repository is hosted at `https://github.com/caivictor/F_R_I.git`. The project must be initialized as a Git repository. All phases must be developed on separate branches and merged via GitHub Pull Requests.
 - **Backend:** Python (FastAPI/LangChain/LangGraph) to orchestrate the AI agents.
 - **Frontend:** React / Next.js for a minimal UI focused on the chat interaction and Markdown rendering.
 - **Database:** Local SQLite- **Version Control & Collaboration:** Git and GitHub. All work must be logically committed. Features and phases must be developed on branches and merged via Pull Requests.
