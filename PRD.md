@@ -15,32 +15,36 @@ A standalone web application powered by a multi-agent AI system. The application
   - **Error Handling:** If a sub-agent gets stuck, it dynamically retries with adjusted prompts and approaches up to 3 times before alerting the user in the chat UI for manual intervention.
 
 - **Research Agent (Model: Gemini Flash Latest):**
-  - **Role:** Data Gatherer.
-  - **Responsibilities:** Scrapes the web for the latest news and financial information on requested sectors/companies. Passes a comprehensive raw text report to the Analysis Agent.
+  - **Role:** Financial Data & News Gatherer.
+  - **Data Source (MVP):** Google News Business Section.
+  - **Access Mechanism:** Free / No-API-Key approach using Google News RSS feeds (e.g., `https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en`) and HTML scraping with `feedparser`, `httpx`, and `beautifulsoup4`.
+  - **Responsibilities:**
+    1. Fetches and parses the latest top business and market headlines on demand without requiring paid API keys.
+    2. Extracts essential metadata: title, source publisher, publication timestamp, summary snippet, and article URL.
+    3. Synthesizes and filters the raw news feed into a structured markdown report highlighting major market themes and trending public companies.
+    4. Passes the consolidated research briefing downstream to the Analysis Agent.
 
 - **Analysis Agent (Model: Gemini Flash Latest):**
   - **Role:** Financial Analyst.
-  - **Responsibilities:** Receives the research report, identifies top public companies, downloads financial data, and evaluates investment potential based on its skill definitions. Outputs a structured report containing the company name, latest news, and a data-backed investment thesis.
+  - **Responsibilities:** Receives the research report, identifies top public companies mentioned, downloads financial data, and evaluates investment potential based on its configured persona/prompts. Outputs a structured report containing company ticker/name, latest news context, and a data-backed investment thesis.
 
 - **Investment Agent (Model: Gemini Flash Latest):**
   - **Role:** Portfolio Manager.
   - **Responsibilities:** Tracks the current simulated paper-trading portfolio (stored in a local database), reports performance metrics, and executes simulated buy/sell orders based on user decisions routed through the Manager Agent.
 
 ## 3. User Experience & Interface
-- **Persona Management:** The UI must include a settings/configuration area where the user can view, edit, and save the system prompt/persona for each individual agent. Changes must be persisted for future sessions without requiring code or CLI modifications.
-- **Primary Interface:** A chat-based UI communicating directly with the Manager Agent. The chat UI should support Markdown rendering for displaying financial reports and tables elegantly.
-- **Trigger Mechanism:** Manual trigger. The user clicks a button or types a prompt (e.g., "Research AI hardware companies and recommend an investment") to kick off the research and analysis cycle.
+- **Primary Interface:** A clean, modern chat-based UI communicating directly with the Manager Agent. The chat UI must support full Markdown rendering for displaying financial reports and tables elegantly.
+- **Persona Management:** A dedicated settings/configuration modal or panel in the UI allowing the user to view, edit, and save the system prompt/persona for each agent. Changes are stored in SQLite and persist across app reboots without touching CLI/code.
+- **Trigger Mechanism:** Manual trigger. The user clicks a button or types a prompt (e.g., "Analyze today's business news and recommend top stocks") to kick off the multi-agent workflow.
 
 ## 4. Technical Stack & Environment Constraints
 - **Target Environment:** Ubuntu 24.04 (User's laptop/host).
-- **Version Control:** Git and GitHub. The repository is hosted at `https://github.com/caivictor/F_R_I.git`. The project must be initialized as a Git repository. All phases must be developed on separate branches and merged via GitHub Pull Requests.
-- **Backend:** Python (FastAPI/LangChain/LangGraph) to orchestrate the AI agents.
-- **Frontend:** React / Next.js for a minimal UI focused on the chat interaction and Markdown rendering.
-- **Database:** Local SQLite- **Version Control & Collaboration:** Git and GitHub. All work must be logically committed. Features and phases must be developed on branches and merged via Pull Requests.
-- **Database:** Local SQLite (for simulated paper trading portfolio, agent state tracking, and persisting editable agent personas - ideal for the MVP).
+- **Version Control:** Git and GitHub. The repository is hosted at `https://github.com/caivictor/F_R_I.git`. All phases must be developed on separate branches and merged via GitHub Pull Requests.
+- **Backend:** Python (FastAPI, LangChain/LangGraph, `feedparser`, `beautifulsoup4`, `httpx`, `yfinance`).
+- **Frontend:** React / Next.js with Tailwind CSS for a minimal UI focused on the chat interaction, loading indicators, and Markdown rendering.
+- **Database:** Local SQLite (for simulated paper-trading portfolio, agent execution history, and persisting editable agent personas).
 
 ## 5. Phased Execution Roadmap
-To ensure the AI coding agent builds this successfully without context collapse, development must strictly follow these phases:
 
 ### Phase 1: Proof of Concept (PoC) & Core Agent Wiring
 - Set up the FastAPI backend and minimal React chat frontend.
@@ -48,8 +52,8 @@ To ensure the AI coding agent builds this successfully without context collapse,
 - Build dummy/mock versions of the 3 sub-agents to verify the Manager can successfully delegate tasks and return a final aggregated response to the frontend.
 
 ### Phase 2: Agent Tooling & Real Data (Research & Analysis)
-- Equip the Research Agent with web scraping/search tools (e.g., Tavily, DuckDuckGo, or BeautifulSoup) and integrate Gemini Flash.
-- Equip the Analysis Agent with financial data tools (e.g., yfinance API) and integrate Gemini Flash to process the Research Agent's handoff.
+- Build the Research Agent's Google News Business parser using `feedparser` / `httpx` (no external API key required).
+- Equip the Analysis Agent with financial data tools (e.g., `yfinance` API) and integrate Gemini Flash to process the Research Agent's handoff.
 - Implement the dynamic retry logic (up to 3 times) in the Manager Agent for handling tool execution failures in these sub-agents.
 
 ### Phase 3: Portfolio Tracking (Investment Agent)
@@ -64,6 +68,6 @@ To ensure the AI coding agent builds this successfully without context collapse,
 
 ## 6. Documentation & Handover Mandates
 For *every single phase* completed above, the AI builder MUST:
-1. Write comprehensive inline code documentation explaining agent prompts and tool definitions.
+1. Write comprehensive inline code documentation explaining agent prompts, RSS parser logic, and tool definitions.
 2. Update the `README.md` with step-by-step installation instructions, dependency requirements, and environment variable setup (including API keys).
 3. Maintain a `CHANGELOG.md` detailing what was built in the phase.
