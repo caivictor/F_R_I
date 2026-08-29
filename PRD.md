@@ -108,7 +108,10 @@ A standalone web application powered by a multi-agent AI system. The application
 - **Trigger Mechanism:** Manual trigger. The user clicks a button or types a prompt (e.g., "Analyze today's business news and recommend top stocks") to kick off the multi-agent workflow.
 
 ## 4. Technical Stack & Environment Constraints
-- **Target Environment:** Ubuntu 24.04 (User's laptop/host).
+- **Target Environment & Portability:**
+  - High portability across Linux, macOS, and Windows with minimal system prerequisites.
+  - Standard Python (3.10+) runtime using a virtual environment (`venv`) with zero heavy database daemons or mandatory Docker overhead.
+  - The FastAPI backend should serve the pre-built static frontend assets directly (or provide a single unified launcher), so end-users only need Python installed to run the application.
 - **Version Control:** Git and GitHub. The repository is hosted at `https://github.com/caivictor/F_R_I.git`. All phases must be developed on separate branches and merged via GitHub Pull Requests.
 - **Backend:** Python (FastAPI, LangChain/LangGraph, `feedparser`, `beautifulsoup4`, `httpx`, `yfinance`).
 - **Frontend:** React / Next.js with Tailwind CSS for a minimal UI focused on chat interaction, loading indicators, Markdown rendering, and settings modals.
@@ -137,8 +140,22 @@ A standalone web application powered by a multi-agent AI system. The application
 - Add clear loading states/indicators in the chat displaying real-time agent handoffs.
 - Implement the Persona Management UI with editable prompts and a "Reset to Default" failsafe button.
 
-## 6. Documentation & Handover Mandates
-For *every single phase* completed above, the AI builder MUST:
-1. Write comprehensive inline code documentation explaining agent prompts, RSS parser logic, and tool definitions.
-2. Update the `README.md` with step-by-step installation instructions, dependency requirements, and environment variable setup (including API keys).
-3. Maintain a `CHANGELOG.md` detailing what was built in the phase.
+## 6. Documentation, Installation & User Manual Mandates
+To ensure the application is easily installed, operated, and maintained by any user, the AI builder MUST produce and maintain:
+
+1. **`INSTALL.md` (Installation Guide):**
+   - Step-by-step installation instructions for Linux, macOS, and Windows.
+   - Python virtual environment setup (`python3 -m venv venv`) and dependency installation (`pip install -r requirements.txt`).
+   - Configuration instructions for `.env` (Gemini API Key setup).
+   - Single-command start scripts (`start.sh` for Linux/macOS and `start.bat` for Windows).
+
+2. **`USER_MANUAL.md` (Operations Manual):**
+   - Comprehensive end-user operational guide with screenshots / ASCII diagrams of the UI.
+   - Walkthrough of the Manager Agent chat commands, sample prompts for research runs, and analysis deep dives.
+   - Guide on executing paper trades, depositing/resetting cash, and understanding financial metrics (ROIC, FCF, D/E, etc.).
+   - Instructions on accessing the Persona Management settings panel to customize or reset agent system prompts.
+   - Guide on exporting reports to Markdown / Obsidian.
+
+3. **`README.md` & `CHANGELOG.md`:**
+   - Standard architectural overview, repository structure, and per-phase progress logs.
+   - Comprehensive inline code documentation across all modules, tools, and prompts.
