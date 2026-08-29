@@ -54,8 +54,24 @@ A standalone web application powered by a multi-agent AI system. The application
     - Bull vs. Bear Risk Analysis
 
 - **Investment Agent (Model: Gemini Flash Latest):**
-  - **Role:** Portfolio Manager.
-  - **Responsibilities:** Tracks the current simulated paper-trading portfolio (stored in a local database), reports performance metrics, and executes simulated buy/sell orders based on user decisions routed through the Manager Agent.
+  - **Role:** Portfolio Manager & Execution Engine.
+  - **Simulated Database Tracking (SQLite):**
+    - Manages a persistent SQLite database storing cash balance, asset positions, and historical transaction logs.
+    - **Data Tracked per Asset:**
+      - Ticker Symbol & Asset Name
+      - Total Shares Owned
+      - Average Cost Basis per Share & Total Invested Amount
+      - Current Market Price & Current Market Value (fetched via `yfinance`)
+      - Unrealized Profit/Loss ($ and %)
+      - Cumulative Dividends Received & Yield on Cost
+      - Portfolio Allocation Percentage (% of total portfolio)
+    - **Transaction History Log:**
+      - Timestamp, Order Type (BUY / SELL / DIVIDEND), Ticker, Quantity, Price per Share, Total Transaction Value, and Trade Rationale/Notes.
+  - **Core Responsibilities:**
+    1. **Order Validation & Execution:** Simulates buying and selling. Verifies sufficient cash balance before executing BUY orders, and checks sufficient share quantity before executing SELL orders. Updates cash reserves and position records automatically.
+    2. **Real-time Portfolio Valuation:** Queries current quotes to compute real-time Net Asset Value (NAV), total portfolio return (unrealized + realized P&L), and cash allocation.
+    3. **Dividend & Income Tracking:** Allows logging dividend distributions, updating total returns and yield on cost metrics.
+    4. **Portfolio Reporting:** Generates clean, markdown-formatted portfolio status reports, asset allocation summaries, and performance breakdowns on demand.
 
 ## 3. User Experience & Interface
 - **Primary Interface:** A clean, modern chat-based UI communicating directly with the Manager Agent. The chat UI must support full Markdown rendering for displaying financial reports and tables elegantly.
@@ -67,7 +83,7 @@ A standalone web application powered by a multi-agent AI system. The application
 - **Version Control:** Git and GitHub. The repository is hosted at `https://github.com/caivictor/F_R_I.git`. All phases must be developed on separate branches and merged via GitHub Pull Requests.
 - **Backend:** Python (FastAPI, LangChain/LangGraph, `feedparser`, `beautifulsoup4`, `httpx`, `yfinance`).
 - **Frontend:** React / Next.js with Tailwind CSS for a minimal UI focused on the chat interaction, loading indicators, and Markdown rendering.
-- **Database:** Local SQLite (for simulated paper-trading portfolio, agent execution history, and persisting editable agent personas).
+- **Database:** Local SQLite (storing: 1. `positions` table with cost basis, shares, dividends; 2. `transactions` table with full trade audit history; 3. `portfolio_summary` with cash balance and realized gains; 4. `agent_personas` for custom prompt persistence).
 
 ## 5. Phased Execution Roadmap
 
