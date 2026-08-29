@@ -25,8 +25,33 @@ A standalone web application powered by a multi-agent AI system. The application
     4. Passes the consolidated research briefing downstream to the Analysis Agent.
 
 - **Analysis Agent (Model: Gemini Flash Latest):**
-  - **Role:** Financial Analyst.
-  - **Responsibilities:** Receives the research report, identifies top public companies mentioned, downloads financial data, and evaluates investment potential based on its configured persona/prompts. Outputs a structured report containing company ticker/name, latest news context, and a data-backed investment thesis.
+  - **Role:** Quantitative & Fundamental Equity Analyst.
+  - **Public Company Filter:** Enforces a strict filter to verify that entities identified in the research briefing are publicly traded equities with valid exchange ticker symbols (e.g., NASDAQ, NYSE). Private companies (e.g., OpenAI, SpaceX, Stripe) are flagged and excluded from the fundamental investment scorecard.
+  - **Data Ingestion Tooling:** Uses `yfinance` to retrieve historical market data, fundamental financial statements (Income Statement, Balance Sheet, Cash Flow), and valuation multiples without requiring paid Bloomberg/FactSet APIs.
+  - **Core Long-Term Holding Evaluation Metrics:**
+    1. **Profitability & Capital Efficiency (The Moat Indicators):**
+       - Return on Invested Capital (ROIC) & Return on Equity (ROE) (identifying high returns on reinvested capital).
+       - Operating Margin and Gross Margin consistency/expansion over 3-5 years.
+    2. **Cash Generation & Financial Health (Solvency & Resilience):**
+       - Free Cash Flow (FCF) and Free Cash Flow Yield (FCF / Market Cap).
+       - Total Debt-to-Equity (D/E) ratio and Interest Coverage ratio (assessing leverage and debt safety).
+       - Current & Quick Ratios (short-term liquidity buffer).
+    3. **Growth & Compounding Consistency:**
+       - Multi-year Revenue CAGR and Normalized Diluted EPS growth.
+       - Free cash flow growth trajectory over 3-5 years.
+    4. **Valuation & Entry Safety:**
+       - Trailing P/E, Forward P/E, and PEG Ratio (Price/Earnings to Growth).
+       - Price-to-Free-Cash-Flow (P/FCF) and EV/EBITDA ratios.
+       - Dividend Yield & Payout Ratio (if applicable).
+    5. **Qualitative Moat & Risk Assessment:**
+       - Competitive advantages (pricing power, network effects, high switching costs).
+       - Industry tailwinds vs. key regulatory or technological disruption risks.
+  - **Output Deliverable:** Generates a structured "Long-Term Investment Dossier" in Markdown featuring:
+    - Company Name & Ticker Symbol
+    - Executive Summary & Recent News Context
+    - Financial Health Scorecard (Key Metrics Table)
+    - Core Investment Thesis (Why this is a 3-5+ year compounder)
+    - Bull vs. Bear Risk Analysis
 
 - **Investment Agent (Model: Gemini Flash Latest):**
   - **Role:** Portfolio Manager.
