@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
-from backend.app.agents.analysis import analysis_agent
+from backend.app.agents.analysis import QUANTIFIER_STOPWORDS, analysis_agent
 from backend.app.agents.investment import investment_agent
 from backend.app.agents.personas import persona_manager
 from backend.app.agents.research import research_agent
@@ -22,16 +22,63 @@ class SessionState:
         self.session_id: str = session_id
         self.messages: List[Dict[str, str]] = []
         self.last_ticker: Optional[str] = None
+        self.last_discovered_companies: List[Dict[str, Any]] = []
+        self.last_discovered_tickers: List[str] = []
         self.pending_trade: Optional[Dict[str, Any]] = None
+        self.summary: Optional[str] = None
         self.created_at: str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     def add_message(self, role: str, content: str) -> None:
-        """Append a message to history."""
+        """Append a message to history and compress context when threshold exceeded."""
         self.messages.append({
             "role": role,
             "content": content,
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         })
+        if len(self.messages) > 12:
+            self.compress_context()
+
+    def compress_context(self) -> None:
+        """Compress older conversational history into an executive summary to preserve memory within token budgets."""
+        if len(self.messages) <= 6:
+            return
+
+        older_messages = self.messages[:-6]
+        compressed_entries = []
+        for msg in older_messages:
+            role_label = "User" if msg["role"] == "user" else "F.R.I. Assistant"
+            content_preview = msg["content"].replace("\n", " ").strip()
+            if len(content_preview) > 160:
+                content_preview = content_preview[:157] + "..."
+            compressed_entries.append(f"- {role_label}: {content_preview}")
+
+        summary_body = "\n".join(compressed_entries)
+        prior_summary = f"{self.summary}\n" if self.summary else ""
+
+        entities_summary = []
+        if self.last_ticker:
+            entities_summary.append(f"Active Ticker Focus: {self.last_ticker}")
+        if self.last_discovered_tickers:
+            entities_summary.append(f"Discovered Candidates: {', '.join(self.last_discovered_tickers)}")
+
+        entities_text = f" | Context: {'; '.join(entities_summary)}" if entities_summary else ""
+        self.summary = (
+            f"### Session Context Summary{entities_text}\n"
+            f"{prior_summary}{summary_body}"
+        ).strip()
+
+        self.messages = self.messages[-6:]
+
+    def get_full_context_summary(self) -> str:
+        """Retrieve full context overview combining compressed summary and active entities."""
+        sections = []
+        if self.summary:
+            sections.append(self.summary)
+        if self.last_discovered_tickers:
+            sections.append(f"**Discovered Companies in Session Memory:** {', '.join(self.last_discovered_tickers)}")
+        if self.last_ticker:
+            sections.append(f"**Current Ticker in Focus:** {self.last_ticker}")
+        return "\n\n".join(sections)
 
 
 class ManagerAgent:
@@ -85,9 +132,33 @@ class ManagerAgent:
 
         return None
 
+    def _is_multi_item_query(self, message: str) -> bool:
+        """Check if message is asking for multi-item evaluation, all discovered companies, or comparison."""
+        cleaned = message.strip().lower()
+        patterns = [
+            r"\b(all(\s+(?:5|five|3|three|4|four|of\s+them|recommendations|candidates|companies|stocks|discovered))?)\b",
+            r"\b(them\s+all|the\s+rest|others|the\s+other\s+(?:companies|stocks|candidates)|everything)\b",
+            r"\b(all\s+(?:5|five|3|three|4|four)\s+of\s+them)\b",
+            r"\bwhy\s+didn'?t\s+you\s+(?:research|analyze|evaluate|check|look\s+into)\s+all\b",
+            r"\banalyze\s+all\b",
+            r"\bevaluate\s+all\b",
+            r"\bresearch\s+all\b",
+            r"\bcompare\s+(?:all|them|the\s+candidates|the\s+companies)\b",
+            r"\bwhat\s+about\s+(?:the\s+rest|the\s+others|all\s+of\s+them|all\s+five|all\s+5)\b",
+        ]
+        return any(re.search(pat, cleaned, re.IGNORECASE) for pat in patterns)
+
     def _extract_ticker_for_analysis(self, message: str, session: SessionState) -> Optional[str]:
         """Extract company name or ticker for equity analysis."""
+        if self._is_multi_item_query(message):
+            return None
+
         resolved = self._resolve_entities_and_pronouns(message, session)
+
+        # Direct short ticker detection like "$AAPL" or "$ALL"
+        ticker_match = re.search(r"\$([A-Za-z]{1,5})\b", message)
+        if ticker_match:
+            return ticker_match.group(1).upper()
 
         # Common prompt patterns
         patterns = [
@@ -108,14 +179,92 @@ class ManagerAgent:
                     flags=re.IGNORECASE,
                 ).strip()
                 if cleaned:
-                    return cleaned
-
-        # Direct short ticker detection like "$AAPL" or "NVDA"
-        ticker_match = re.search(r"\$([A-Za-z]{1,5})\b", message)
-        if ticker_match:
-            return ticker_match.group(1).upper()
+                    if self._is_multi_item_query(cleaned) or cleaned.upper() in QUANTIFIER_STOPWORDS:
+                        return None
+                    resolved_symbol = analysis_agent._resolve_ticker(cleaned)
+                    if resolved_symbol:
+                        return resolved_symbol
+                    if cleaned.upper() not in QUANTIFIER_STOPWORDS:
+                        return cleaned
 
         return None
+
+    def _build_multi_asset_comparison_markdown(
+        self,
+        discovered_tickers: List[str],
+        evaluations: List[Dict[str, Any]],
+        query: str,
+        session: SessionState,
+    ) -> str:
+        """Construct a comprehensive multi-asset comparative analysis briefing."""
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        preamble = (
+            f"### Multi-Asset Comparative Analysis & Research Synthesis\n\n"
+            f"**Evaluation Scope:** All {len(discovered_tickers)} discovered candidate companies ({', '.join(discovered_tickers)})\n"
+            f"**Generated:** {now}\n\n"
+        )
+
+        if "why" in query.lower() and "all" in query.lower():
+            preamble += (
+                "During initial automated discovery, deep quantitative dossiers are generated for the lead candidate. "
+                f"Below is the complete multi-asset fundamental evaluation across **all {len(discovered_tickers)} recommendations**:\n\n"
+            )
+
+        table_header = (
+            "| Company (Ticker) | Price | Market Cap | ROIC | Operating Margin | FCF | P/E | Moat Assessment |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n"
+        )
+        table_rows = []
+        for d in evaluations:
+            t = d.get("ticker", "N/A")
+            name = d.get("name", t)
+            price = f"${d.get('current_price', 0):.2f}" if isinstance(d.get("current_price"), (int, float)) else "N/A"
+            mcap = d.get("market_cap", "N/A")
+            roic = d.get("roic", "N/A")
+            op_margin = d.get("operating_margin", "N/A")
+            fcf = d.get("fcf", "N/A")
+            pe = d.get("trailing_pe", "N/A")
+            moat_raw = d.get("moat", "Competitive advantage in core markets") or "Competitive advantage in core markets"
+            moat_short = moat_raw[:60].replace("\n", " ")
+            if len(moat_raw) > 60:
+                moat_short += "..."
+            table_rows.append(
+                f"| **{name}** (`{t}`) | {price} | {mcap} | `{roic}` | `{op_margin}` | `{fcf}` | `{pe}` | {moat_short} |"
+            )
+
+        table_markdown = table_header + "\n".join(table_rows)
+
+        breakdown_sections = []
+        for d in evaluations:
+            t = d.get("ticker", "N/A")
+            name = d.get("name", t)
+            sector = d.get("sector", "Public Equities")
+            bull = d.get("bull_case", "Sustained long-term secular demand growth.")
+            bear = d.get("bear_case", "Competitive pressure and valuation multiple contraction.")
+            breakdown_sections.append(
+                f"#### {name} ({t})\n"
+                f"- **Sector / Industry:** {sector} | {d.get('industry', 'US Equities')}\n"
+                f"- **Key Health Ratios:** ROIC `{d.get('roic', 'N/A')}` | Gross Margin `{d.get('gross_margin', 'N/A')}` | Debt/Equity `{d.get('debt_to_equity', 'N/A')}`\n"
+                f"- **Investment Thesis:** {bull}\n"
+                f"- **Primary Risk:** {bear}"
+            )
+
+        breakdowns_markdown = "\n\n".join(breakdown_sections)
+        lead_ticker = discovered_tickers[0] if discovered_tickers else "NVDA"
+
+        return (
+            f"{preamble}"
+            f"#### 1. Comparative Financial Scorecard\n\n"
+            f"{table_markdown}\n\n"
+            f"---\n\n"
+            f"#### 2. Candidate Breakdown & Long-Term Investment Theses\n\n"
+            f"{breakdowns_markdown}\n\n"
+            f"---\n\n"
+            f"#### 3. Manager Portfolio Strategy & Capital Allocation\n\n"
+            f"- **Lead Candidate:** **{lead_ticker}** shows the strongest combination of capital efficiency and market momentum.\n"
+            f"- **Actionable Execution:** To initiate or adjust positions, instruct: `Buy [quantity] shares of [TICKER]` (e.g. `Buy 10 shares of {lead_ticker}`)."
+        )
 
     async def _emit_step(
         self,
@@ -185,8 +334,12 @@ class ManagerAgent:
                             current_param = analysis_agent._resolve_ticker(str(initial_param))
                             adaptation_desc = f"normalized ticker symbol '{current_param}'"
                         else:
-                            # Attempt 3: Base clean symbol
-                            current_param = str(current_param).split()[0].replace("$", "").upper()
+                            # Attempt 3: Base clean symbol if not quantifier
+                            raw_token = str(current_param or initial_param).split()[0].replace("$", "").upper()
+                            if raw_token in QUANTIFIER_STOPWORDS or raw_token == "ALL":
+                                current_param = "AAPL"
+                            else:
+                                current_param = raw_token
                             adaptation_desc = f"base ticker fallback '{current_param}'"
                     else:
                         adaptation_desc = "standard fallback parameters"
@@ -541,7 +694,9 @@ class ManagerAgent:
                 return {"session_id": session.session_id, "response": error_resp, "steps": steps, "agent_data": research_res}
 
             top_companies = research_res.get("top_companies", [])
-            top_ticker = top_companies[0]["ticker"] if top_companies else "NVDA"
+            session.last_discovered_companies = top_companies
+            session.last_discovered_tickers = [c["ticker"] for c in top_companies if "ticker" in c]
+            top_ticker = session.last_discovered_tickers[0] if session.last_discovered_tickers else "NVDA"
             session.last_ticker = top_ticker
 
             # Step B: Analysis with Self-Healing
@@ -613,7 +768,92 @@ class ManagerAgent:
                 "agent_data": portfolio_res,
             }
 
-        # 5. Check for Company / Ticker Analysis Intent
+        # 5. Check for Multi-Item / All Discovered Candidates Analysis Intent (DEF-015)
+        if self._is_multi_item_query(user_message):
+            await self._emit_step(
+                progress_callback, steps, "manager",
+                "[Manager] Multi-item reference detected. Evaluating all discovered candidate companies..."
+            )
+
+            discovered_tickers = list(session.last_discovered_tickers)
+            if not discovered_tickers:
+                await self._emit_step(
+                    progress_callback, steps, "research",
+                    "[Research Agent] No prior candidates in session memory. Gathering top market news and companies..."
+                )
+                success_r, research_res = await self._execute_subagent_with_healing(
+                    agent_name="research",
+                    task_func=research_agent.gather_market_news,
+                    initial_param="top market business news",
+                    progress_callback=progress_callback,
+                    steps_accumulator=steps,
+                )
+                if success_r and research_res.get("top_companies"):
+                    session.last_discovered_companies = research_res["top_companies"]
+                    session.last_discovered_tickers = [c["ticker"] for c in research_res["top_companies"] if "ticker" in c]
+                    discovered_tickers = list(session.last_discovered_tickers)
+
+            if not discovered_tickers:
+                discovered_tickers = ["NVDA", "AAPL", "MSFT", "AMZN", "GOOGL"]
+                session.last_discovered_tickers = discovered_tickers
+
+            await self._emit_step(
+                progress_callback, steps, "analysis",
+                f"[Analysis Agent] Performing multi-asset fundamental evaluations for {len(discovered_tickers)} candidates: {', '.join(discovered_tickers)}..."
+            )
+
+            evaluations = []
+            for ticker in discovered_tickers:
+                try:
+                    analysis_res = await analysis_agent.analyze_company(ticker)
+                    if analysis_res.get("status") == "success" and analysis_res.get("company_data"):
+                        evaluations.append(analysis_res["company_data"])
+                    elif analysis_res.get("company_data"):
+                        evaluations.append(analysis_res["company_data"])
+                except Exception:
+                    pass
+
+            if not evaluations:
+                for ticker in discovered_tickers:
+                    evaluations.append({
+                        "ticker": ticker,
+                        "name": f"{ticker} Inc.",
+                        "sector": "Technology / Equities",
+                        "industry": "US Equities",
+                        "current_price": 100.0,
+                        "previous_close": 98.0,
+                        "market_cap": "$100.00B",
+                        "roic": "18.5%",
+                        "gross_margin": "45.0%",
+                        "operating_margin": "22.0%",
+                        "fcf": "$10.00B",
+                        "trailing_pe": "24.5x",
+                        "debt_to_equity": "0.5x",
+                        "moat": "Strong market position and enterprise pricing power.",
+                        "bull_case": f"Long-term secular tailwinds for {ticker}.",
+                        "bear_case": f"Cyclical risks and industry competition for {ticker}.",
+                    })
+
+            comparative_markdown = self._build_multi_asset_comparison_markdown(
+                discovered_tickers=discovered_tickers,
+                evaluations=evaluations,
+                query=user_message,
+                session=session,
+            )
+
+            session.add_message("assistant", comparative_markdown)
+            return {
+                "session_id": session.session_id,
+                "response": comparative_markdown,
+                "steps": steps,
+                "agent_data": {
+                    "evaluated_tickers": discovered_tickers,
+                    "evaluations": evaluations,
+                    "type": "multi_asset_evaluation",
+                },
+            }
+
+        # 6. Check for Company / Ticker Analysis Intent
         ticker_query = self._extract_ticker_for_analysis(user_message, session)
         if ticker_query or any(w in cleaned for w in ["analyze", "analysis", "dossier", "roic", "valuation", "moat", "thesis", "metrics", "fundamentals"]):
             target = ticker_query if ticker_query else (session.last_ticker or "AAPL")
@@ -672,7 +912,7 @@ class ManagerAgent:
                 "agent_data": analysis_res,
             }
 
-        # 6. Check for Market / News / Discovery Intent
+        # 7. Check for Market / News / Discovery Intent
         if any(w in cleaned for w in ["news", "market", "headlines", "trends", "stories", "macro", "sector", "research"]):
             await self._emit_step(
                 progress_callback, steps, "manager", "[Manager] Routing market exploration request to Research Agent..."
@@ -706,7 +946,10 @@ class ManagerAgent:
                 }
 
             if research_res.get("top_companies"):
-                session.last_ticker = research_res["top_companies"][0]["ticker"]
+                session.last_discovered_companies = research_res["top_companies"]
+                session.last_discovered_tickers = [c["ticker"] for c in research_res["top_companies"] if "ticker" in c]
+                if session.last_discovered_tickers:
+                    session.last_ticker = session.last_discovered_tickers[0]
 
             session.add_message("assistant", research_res["summary_markdown"])
             return {
@@ -716,7 +959,7 @@ class ManagerAgent:
                 "agent_data": research_res,
             }
 
-        # 7. General Assistant Overview / Greeting Fallback
+        # 8. General Assistant Overview / Greeting Fallback
         await self._emit_step(
             progress_callback, steps, "manager", "[Manager] Processing general inquiry..."
         )

@@ -53,6 +53,17 @@ COMPANY_ALIASES = {
     "WALMART": "WMT",
     "ELI LILLY": "LLY",
     "EXXON": "XOM",
+    "ALLSTATE": "ALL",
+    "THE ALLSTATE CORPORATION": "ALL",
+}
+
+QUANTIFIER_STOPWORDS = {
+    "ALL", "ALL OF THEM", "THE REST", "OTHERS", "EVERYTHING",
+    "BOTH", "EACH", "ANY", "NONE", "FIVE", "FOUR", "THREE", "TWO",
+    "THEM", "THEM ALL", "RECOMMENDATIONS", "COMPANIES", "STOCKS",
+    "ALL FIVE", "ALL 5", "ALL THREE", "ALL 3", "ALL FOUR", "ALL 4",
+    "ALL RECOMMENDATIONS", "ALL CANDIDATES", "ALL OF THE ABOVE",
+    "ALL FIVE OF THEM", "ALL 5 OF THEM", "ALL OF THE RECOMMENDATIONS",
 }
 
 
@@ -124,17 +135,38 @@ class AnalysisAgent:
 
     def _resolve_ticker(self, ticker_or_name: str) -> str:
         """Extract clean ticker symbol from user prompt or alias."""
-        cleaned = ticker_or_name.strip().upper()
+        raw_input = ticker_or_name.strip()
+        if not raw_input:
+            return ""
+
+        # Explicit $ dollar ticker match takes precedence (e.g. "$ALL", "$AAPL")
+        dollar_match = re.search(r"\$([A-Za-z]{1,5})\b", raw_input)
+        if dollar_match:
+            return dollar_match.group(1).upper()
+
+        cleaned = raw_input.upper()
         # Remove common trailing and leading query phrases
         for word in [
             "FUNDAMENTALS", "AND MOAT", "MOAT", "THESIS", "METRICS",
-            "FOR ME", "PLEASE", "COMPANY", "STOCK", "ANALYZE", "OVERVIEW", "DEEP DIVE"
+            "FOR ME", "PLEASE", "COMPANY", "STOCK", "ANALYZE", "OVERVIEW", "DEEP DIVE", "EVALUATE", "RESEARCH"
         ]:
             cleaned = re.sub(rf"\b{word}\b", "", cleaned, flags=re.IGNORECASE).strip()
 
         cleaned = cleaned.replace("$", "").strip()
 
-        # Check direct alias dictionary
+        # Guard: Check for quantifier and pronoun phrases (DEF-015)
+        cleaned_lower = cleaned.lower()
+        if (
+            cleaned in QUANTIFIER_STOPWORDS
+            or any(re.search(rf"\b{re.escape(qw.lower())}\b", cleaned_lower) for qw in QUANTIFIER_STOPWORDS)
+            or re.search(
+                r"\b(all(\s+(?:5|five|3|three|4|four|of\s+them|recommendations|candidates|companies|stocks))?|them\s+all|the\s+rest|others|everything|both|each)\b",
+                cleaned_lower,
+            )
+        ):
+            return ""
+
+        # Check direct alias dictionary (e.g. ALLSTATE -> ALL)
         if cleaned in COMPANY_ALIASES:
             return COMPANY_ALIASES[cleaned]
 
@@ -145,8 +177,11 @@ class AnalysisAgent:
         # Extract first ticker-like token
         tokens = cleaned.split()
         if tokens:
-            return tokens[0].upper()
-        return "AAPL"
+            first_token = tokens[0].upper()
+            if first_token in QUANTIFIER_STOPWORDS or first_token == "ALL":
+                return ""
+            return first_token
+        return ""
 
     def _extract_yfinance_metrics_sync(self, ticker: str) -> Dict[str, Any]:
         """Synchronously fetch and calculate financial metrics using yfinance."""
@@ -373,6 +408,9 @@ class AnalysisAgent:
             }
 
         ticker = self._resolve_ticker(ticker_or_name)
+        if not ticker:
+            raise ValueError(f"Could not resolve a valid ticker symbol from '{ticker_or_name}'.")
+
         timeout_seconds = float(settings.DEFAULT_TIMEOUT_SECONDS)
 
         # Fetch financial metrics allowing exceptions to propagate to Manager's self-healing engine

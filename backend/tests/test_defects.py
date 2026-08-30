@@ -550,3 +550,107 @@ def test_def_014_word_boundary_company_alias_resolution():
     assert agent._resolve_ticker("Eli Lilly") == "LLY"
     assert agent._resolve_ticker("$AMZN") == "AMZN"
 
+
+@pytest.mark.asyncio
+async def test_def_015_conversational_context_retention_and_quantifier_protection():
+    """DEF-015: Prevent false $ALL ticker extraction on quantifiers, retain discovered companies in memory, and support context compression."""
+    agent = AnalysisAgent()
+
+    # 1. Quantifier phrases must NOT resolve to ticker "ALL"
+    quantifier_queries = [
+        "all",
+        "ALL",
+        "all 5",
+        "all five",
+        "them all",
+        "the rest",
+        "others",
+        "everything",
+        "all five recommendations",
+        "analyze all five of them",
+        "all 5 of them",
+        "why didn't you research all five recommendations",
+        "all candidates",
+        "all recommendations",
+    ]
+    for q in quantifier_queries:
+        assert agent._resolve_ticker(q) == "", f"Expected empty string for quantifier query '{q}', got '{agent._resolve_ticker(q)}'"
+
+    # Explicit ticker syntax and company name aliases for Allstate must continue to resolve to "ALL"
+    assert agent._resolve_ticker("$ALL") == "ALL"
+    assert agent._resolve_ticker("Allstate") == "ALL"
+    assert agent._resolve_ticker("The Allstate Corporation") == "ALL"
+
+    # 2. SessionState memory retention and context compression verification
+    session = SessionState(session_id="test_def_015_session")
+    assert hasattr(session, "last_discovered_companies")
+    assert hasattr(session, "last_discovered_tickers")
+    assert session.last_discovered_companies == []
+    assert session.last_discovered_tickers == []
+
+    # Simulate populating discovered candidates
+    mock_candidates = [
+        {"ticker": "NVDA", "name": "NVIDIA Corporation"},
+        {"ticker": "AAPL", "name": "Apple Inc."},
+        {"ticker": "MSFT", "name": "Microsoft Corporation"},
+        {"ticker": "AMZN", "name": "Amazon.com, Inc."},
+        {"ticker": "GOOGL", "name": "Alphabet Inc."},
+    ]
+    session.last_discovered_companies = mock_candidates
+    session.last_discovered_tickers = [c["ticker"] for c in mock_candidates]
+    session.last_ticker = "NVDA"
+
+    # Verify context compression after multiple turns
+    for i in range(14):
+        session.add_message("user" if i % 2 == 0 else "assistant", f"Turn message {i} content")
+
+    assert session.summary is not None
+    assert "Session Context Summary" in session.summary
+    assert len(session.messages) <= 12
+    session.compress_context()
+    assert len(session.messages) <= 6
+    assert "Discovered Candidates" in session.summary or "NVDA" in session.get_full_context_summary()
+
+    # 3. End-to-end multi-turn conversation via API
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Turn 1: Discovery
+        res1 = await client.post(
+            "/api/chat",
+            json={"message": "Discover market news and analyze trending companies"},
+        )
+        assert res1.status_code == 200
+        data1 = res1.json()
+        session_id = data1["session_id"]
+        assert "Executive Investment Discovery Briefing" in data1["response"]
+
+        # Turn 2: Follow-up inquiring about all recommendations
+        res2 = await client.post(
+            "/api/chat",
+            json={
+                "message": "Why didn't you research all five recommendations?",
+                "session_id": session_id,
+            },
+        )
+        assert res2.status_code == 200
+        data2 = res2.json()
+
+        # Must NOT perform single deep dive on Allstate ($ALL)
+        assert "Allstate" not in data2["response"] or "Allstate Corporation" not in data2["response"]
+        assert "Multi-Asset Comparative Analysis" in data2["response"]
+        assert "Comparative Financial Scorecard" in data2["response"]
+
+        # Turn 3: Alternate quantifier phrasing "Analyze all five of them"
+        res3 = await client.post(
+            "/api/chat",
+            json={
+                "message": "Analyze all five of them",
+                "session_id": session_id,
+            },
+        )
+        assert res3.status_code == 200
+        data3 = res3.json()
+        assert "Multi-Asset Comparative Analysis" in data3["response"]
+        assert "Allstate" not in data3["response"] or "Allstate Corporation" not in data3["response"]
+
+

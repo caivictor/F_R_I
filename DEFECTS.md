@@ -1,5 +1,32 @@
 # DEFECTS
 
+## DEF-015: Conversational Context Loss and False Ticker Extraction on Quantifiers ("all", "all five") During Multi-Agent Discovery
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: user
+- Phase: 4
+
+Steps to reproduce:
+1. Start the application and open a chat session.
+2. Send a prompt to initiate discovery: "Discover market news and analyze trending companies".
+3. Observe that the Research Agent finds 5 top companies from Google News (e.g., NVDA, AAPL, MSFT, AMZN, GOOGL), but the Analysis Agent only evaluates the first candidate.
+4. In the next turn, send a follow-up query: "Why didn't you research all five recommendations?" or "Analyze all five of them".
+5. Observe that the system erroneously extracts "ALL" (The Allstate Corporation NYSE: ALL) as a ticker symbol and runs equity analysis on Allstate, losing context of the 5 discovered research companies and failing to answer the user's inquiry.
+
+Expected:
+1. Quantifier and pronoun phrases ("all", "all 5", "all five", "them all", "the rest", "others", "everything") must not be extracted as the ticker symbol `$ALL` unless explicitly formatted as a ticker (e.g. `$ALL` or `Allstate`).
+2. `SessionState` must retain all discovered companies and research candidates in conversational memory (`last_discovered_companies` / `last_discovered_tickers`).
+3. The Manager Agent should recognize multi-item references and execute multi-asset evaluations/comparisons across all discovered candidates when requested.
+4. The Manager Agent must support conversational history management with context compression so long multi-turn sessions retain context and converse naturally like a supervisor AI.
+Actual:
+"all" in "all five recommendations" is extracted as ticker "ALL" (Allstate Corp), replacing conversational context with an unintended deep dive on Allstate.
+
+History:
+- qa: opened
+- orchestrator: set FIX-READY (backend-dev: Added quantifier stopword filtering, session memory for discovered candidates, multi-asset comparative analysis, and automatic context compression)
+- qa: closed (retested and verified multi-item candidate analysis, quantifier protection against $ALL, and context compression in test_def_015_conversational_context_retention_and_quantifier_protection)
+
 ## DEF-014: Unanchored Substring Matching in Company Alias Resolution Overrides Distinct Tickers and Company Names
 
 - Status: CLOSED
