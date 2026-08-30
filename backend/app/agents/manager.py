@@ -1,15 +1,16 @@
 """Manager Agent orchestrator for F.R.I. multi-agent system."""
 
+import asyncio
 import re
 import uuid
-from typing import Any, Callable, Coroutine, Dict, List, Optional
 from datetime import datetime, timezone
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
-from backend.app.config import settings
-from backend.app.agents.personas import persona_manager
-from backend.app.agents.research import research_agent
 from backend.app.agents.analysis import analysis_agent
 from backend.app.agents.investment import investment_agent
+from backend.app.agents.personas import persona_manager
+from backend.app.agents.research import research_agent
+from backend.app.config import settings
 
 ProgressCallback = Callable[[Dict[str, Any]], Coroutine[Any, Any, None]]
 
@@ -71,7 +72,7 @@ class ManagerAgent:
     def _extract_trade_parameters(self, message: str, session: SessionState) -> Optional[Dict[str, Any]]:
         """Extract action, ticker, and quantity from a trade query."""
         resolved = self._resolve_entities_and_pronouns(message, session)
-        
+
         # Match patterns like: "Buy 10 shares of NVDA", "purchase 15 AAPL", "sell 5 shares of it"
         pattern = r"\b(buy|purchase|sell)\s+(\d+(?:\.\d+)?)\s*(?:shares\s*(?:of)?)?\s*([a-zA-Z\$\.]+)"
         match = re.search(pattern, resolved, flags=re.IGNORECASE)
@@ -81,7 +82,7 @@ class ManagerAgent:
             quantity = float(match.group(2))
             ticker = match.group(3).replace("$", "").upper().strip()
             return {"action": action, "ticker": ticker, "quantity": quantity}
-        
+
         return None
 
     def _extract_ticker_for_analysis(self, message: str, session: SessionState) -> Optional[str]:
@@ -100,7 +101,12 @@ class ManagerAgent:
             if m:
                 extracted = m.group(1).strip().replace("$", "")
                 # Exclude common non-ticker trailing words
-                cleaned = re.sub(r"\b(today|now|please|stock|company|portfolio|shares|share|fundamentals|and moat|moat|thesis|for me)\b", "", extracted, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(
+                    r"\b(today|now|please|stock|company|portfolio|shares|share|fundamentals|and moat|moat|thesis|for me)\b",
+                    "",
+                    extracted,
+                    flags=re.IGNORECASE,
+                ).strip()
                 if cleaned:
                     return cleaned
 
@@ -127,6 +133,86 @@ class ManagerAgent:
         steps_accumulator.append(step)
         if callback:
             await callback(step)
+
+    async def _execute_subagent_with_healing(
+        self,
+        agent_name: str,
+        task_func: Callable[..., Coroutine[Any, Any, Dict[str, Any]]],
+        initial_param: Any,
+        progress_callback: Optional[ProgressCallback],
+        steps_accumulator: List[Dict[str, Any]],
+        max_attempts: int = 3,
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """Self-Healing Engine: execute sub-agent task with dynamic query adaptation up to 3 retries."""
+        last_exception: Optional[Exception] = None
+        current_param = initial_param
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                # Enforce tool timeout per PRD (15-20s)
+                timeout_limit = float(settings.DEFAULT_TIMEOUT_SECONDS)
+                result = await asyncio.wait_for(
+                    task_func(current_param),
+                    timeout=timeout_limit,
+                )
+                # If the agent returned an explicit error status (not guardrail rejection)
+                if isinstance(result, dict) and result.get("status") == "error":
+                    raise RuntimeError(result.get("message", "Sub-agent execution error."))
+
+                return True, result
+
+            except Exception as exc:
+                last_exception = exc
+                err_msg = str(exc) or exc.__class__.__name__
+
+                if attempt < max_attempts:
+                    # Dynamically adjust query / parameter for next attempt
+                    if agent_name == "research":
+                        if attempt == 1:
+                            # Attempt 2: Rephrase to simplified clean keywords
+                            raw = str(initial_param or "")
+                            cleaned_terms = " ".join(re.findall(r"\b[a-zA-Z]{3,}\b", raw))
+                            current_param = cleaned_terms if cleaned_terms else "business market"
+                            adaptation_desc = f"rephrased query '{current_param}'"
+                        else:
+                            # Attempt 3: Fallback to global top business RSS
+                            current_param = None
+                            adaptation_desc = "general business topic feed"
+
+                    elif agent_name == "analysis":
+                        if attempt == 1:
+                            # Attempt 2: Normalize and extract ticker symbol
+                            current_param = analysis_agent._resolve_ticker(str(initial_param))
+                            adaptation_desc = f"normalized ticker symbol '{current_param}'"
+                        else:
+                            # Attempt 3: Base clean symbol
+                            current_param = str(current_param).split()[0].replace("$", "").upper()
+                            adaptation_desc = f"base ticker fallback '{current_param}'"
+                    else:
+                        adaptation_desc = "standard fallback parameters"
+
+                    await self._emit_step(
+                        progress_callback,
+                        steps_accumulator,
+                        "manager",
+                        f"[Manager] Sub-agent '{agent_name}' failed attempt {attempt} ({err_msg}). Retrying ({attempt + 1}/{max_attempts}) with {adaptation_desc}...",
+                    )
+                else:
+                    await self._emit_step(
+                        progress_callback,
+                        steps_accumulator,
+                        "manager",
+                        f"[Manager] Sub-agent '{agent_name}' failed after {max_attempts} attempts. Error: {err_msg}",
+                    )
+
+        # Graceful root-cause reporting after 3 failed retries
+        return False, {
+            "status": "failed",
+            "agent": agent_name,
+            "attempts": max_attempts,
+            "error": str(last_exception),
+            "reason": f"Execution failed after {max_attempts} attempts. Last error: {str(last_exception)}",
+        }
 
     async def process_message(
         self,
@@ -163,7 +249,7 @@ class ManagerAgent:
                     price=trade["price_per_share"],
                 )
                 session.pending_trade = None
-                
+
                 cash_remaining = exec_result.get("cash_remaining", investment_agent.get_cash_balance())
                 response_text = (
                     f"### Trade Confirmation & Execution\n\n"
@@ -256,20 +342,51 @@ class ManagerAgent:
             await self._emit_step(
                 progress_callback, steps, "manager", "[Manager] Launching End-to-End Pipeline: Research -> Analysis -> Investment..."
             )
-            # Step A: Research
+            # Step A: Research with Self-Healing
             await self._emit_step(
                 progress_callback, steps, "research", "[Research Agent] Fetching top market headlines and prominent companies..."
             )
-            research_res = await research_agent.gather_market_news()
-            top_company = research_res["top_companies"][0]
-            top_ticker = top_company["ticker"]
+            success_r, research_res = await self._execute_subagent_with_healing(
+                agent_name="research",
+                task_func=research_agent.gather_market_news,
+                initial_param=user_message,
+                progress_callback=progress_callback,
+                steps_accumulator=steps,
+            )
+            if not success_r:
+                error_resp = (
+                    "### Sub-Agent Execution Failure\n\n"
+                    f"**Manager Report:** Research Agent failed after 3 automated retry attempts.\n\n"
+                    f"**Root Cause:** `{research_res.get('reason')}`\n\n"
+                    "Please verify your query or try again shortly."
+                )
+                session.add_message("assistant", error_resp)
+                return {"session_id": session.session_id, "response": error_resp, "steps": steps, "agent_data": research_res}
+
+            top_companies = research_res.get("top_companies", [])
+            top_ticker = top_companies[0]["ticker"] if top_companies else "NVDA"
             session.last_ticker = top_ticker
 
-            # Step B: Analysis
+            # Step B: Analysis with Self-Healing
             await self._emit_step(
                 progress_callback, steps, "analysis", f"[Analysis Agent] Performing deep fundamental evaluation on lead candidate {top_ticker}..."
             )
-            analysis_res = await analysis_agent.analyze_company(top_ticker)
+            success_a, analysis_res = await self._execute_subagent_with_healing(
+                agent_name="analysis",
+                task_func=analysis_agent.analyze_company,
+                initial_param=top_ticker,
+                progress_callback=progress_callback,
+                steps_accumulator=steps,
+            )
+            if not success_a:
+                error_resp = (
+                    "### Sub-Agent Execution Failure\n\n"
+                    f"**Manager Report:** Analysis Agent failed after 3 automated retry attempts on candidate `{top_ticker}`.\n\n"
+                    f"**Root Cause:** `{analysis_res.get('reason')}`\n\n"
+                    "Please specify an alternate ticker symbol."
+                )
+                session.add_message("assistant", error_resp)
+                return {"session_id": session.session_id, "response": error_resp, "steps": steps, "agent_data": analysis_res}
 
             # Step C: Investment Context
             await self._emit_step(
@@ -280,14 +397,14 @@ class ManagerAgent:
             pipeline_summary = (
                 f"# Executive Investment Discovery Briefing\n\n"
                 f"## 1. Market Research Findings\n"
-                f"{research_res['summary_markdown']}\n\n"
+                f"{research_res.get('summary_markdown', '')}\n\n"
                 f"---\n\n"
                 f"## 2. Quantitative & Fundamental Analysis: {top_ticker}\n"
-                f"{analysis_res['summary_markdown']}\n\n"
+                f"{analysis_res.get('summary_markdown', '')}\n\n"
                 f"---\n\n"
                 f"## 3. Portfolio Allocation & Capital Capacity\n"
                 f"Current Cash Balance: `${portfolio_res['cash_balance']:,.2f}` | NAV: `${portfolio_res['net_asset_value']:,.2f}`\n\n"
-                f"**Manager Recommendation:** {top_ticker} represents a compelling compounding thesis aligned with current market AI infrastructure themes. "
+                f"**Manager Recommendation:** {top_ticker} represents a compelling compounding thesis aligned with current market themes. "
                 f"To initiate a position, instruct: `Buy [quantity] shares of {top_ticker}`."
             )
             session.add_message("assistant", pipeline_summary)
@@ -331,9 +448,45 @@ class ManagerAgent:
             await self._emit_step(
                 progress_callback, steps, "analysis", f"[Analysis Agent] Enforcing US-public filter and calculating fundamental metrics for {target}..."
             )
-            analysis_res = await analysis_agent.analyze_company(target)
+
+            # Check guardrail eligibility directly first
+            rejection = analysis_agent._check_eligibility(target)
+            if rejection:
+                session.add_message("assistant", rejection)
+                return {
+                    "session_id": session.session_id,
+                    "response": rejection,
+                    "steps": steps,
+                    "agent_data": {"status": "rejected", "reason": rejection},
+                }
+
+            # Self-healing execution for analysis agent
+            success_a, analysis_res = await self._execute_subagent_with_healing(
+                agent_name="analysis",
+                task_func=analysis_agent.analyze_company,
+                initial_param=target,
+                progress_callback=progress_callback,
+                steps_accumulator=steps,
+            )
+
+            if not success_a:
+                error_resp = (
+                    "### Analysis Agent Execution Failure\n\n"
+                    f"**Manager Report:** Unable to complete fundamental analysis for **'{target}'** after 3 automated attempts.\n\n"
+                    f"**Root Cause:** `{analysis_res.get('reason')}`\n\n"
+                    "**Action Required:** Please verify the ticker symbol or exchange listing and try again."
+                )
+                session.add_message("assistant", error_resp)
+                return {
+                    "session_id": session.session_id,
+                    "response": error_resp,
+                    "steps": steps,
+                    "agent_data": analysis_res,
+                }
+
             if analysis_res.get("ticker"):
                 session.last_ticker = analysis_res["ticker"]
+
             session.add_message("assistant", analysis_res["summary_markdown"])
             return {
                 "session_id": session.session_id,
@@ -350,9 +503,34 @@ class ManagerAgent:
             await self._emit_step(
                 progress_callback, steps, "research", "[Research Agent] Ingesting top business headlines and ranking public companies..."
             )
-            research_res = await research_agent.gather_market_news(query=user_message)
+
+            # Self-healing execution for research agent
+            success_r, research_res = await self._execute_subagent_with_healing(
+                agent_name="research",
+                task_func=research_agent.gather_market_news,
+                initial_param=user_message,
+                progress_callback=progress_callback,
+                steps_accumulator=steps,
+            )
+
+            if not success_r:
+                error_resp = (
+                    "### Research Agent Execution Failure\n\n"
+                    "**Manager Report:** Unable to retrieve business news headlines after 3 automated recovery attempts.\n\n"
+                    f"**Root Cause:** `{research_res.get('reason')}`\n\n"
+                    "**Action Required:** Please check your internet connectivity or try rephrasing your research prompt."
+                )
+                session.add_message("assistant", error_resp)
+                return {
+                    "session_id": session.session_id,
+                    "response": error_resp,
+                    "steps": steps,
+                    "agent_data": research_res,
+                }
+
             if research_res.get("top_companies"):
                 session.last_ticker = research_res["top_companies"][0]["ticker"]
+
             session.add_message("assistant", research_res["summary_markdown"])
             return {
                 "session_id": session.session_id,
