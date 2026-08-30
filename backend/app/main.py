@@ -14,7 +14,7 @@ from backend.app.routers.portfolio import router as portfolio_router
 app = FastAPI(
     title="F.R.I. Financial Research & Investment API",
     description="Multi-agent financial research, equity analysis, and portfolio paper trading assistant.",
-    version="0.1.0",
+    version="1.0.0",
 )
 
 # CORS middleware configuration
@@ -38,7 +38,7 @@ async def health_check() -> dict:
     return {
         "status": "ok",
         "app": "F.R.I.",
-        "version": "0.1.0",
+        "version": "1.0.0",
     }
 
 
