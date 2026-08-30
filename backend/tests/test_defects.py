@@ -1,5 +1,8 @@
-"""Unit tests verifying fixes for DEF-001 through DEF-009."""
+"""Unit tests verifying fixes for DEF-001 through DEF-012."""
 
+import math
+import os
+import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient, ASGITransport
@@ -7,6 +10,7 @@ from backend.app.agents.analysis import AnalysisAgent, analysis_agent
 from backend.app.agents.investment import InvestmentAgent
 from backend.app.agents.manager import ManagerAgent, SessionState
 from backend.app.agents.research import ResearchAgent, research_agent
+from backend.app.db.database import Database, db
 from backend.app.main import app
 
 
@@ -359,3 +363,100 @@ async def test_def_009_trade_eligibility_guardrail_rejects_private_and_non_us():
         )
         assert res_valid.status_code == 200
         assert "Trade Order Confirmation Required" in res_valid.json()["response"]
+
+
+def test_def_010_negative_zero_and_nonfinite_price_validation():
+    """DEF-010: Negative, zero, NaN, and Inf execution prices are strictly rejected."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+        temp_db_path = tf.name
+
+    try:
+        test_db = Database(db_path=temp_db_path)
+        inv = InvestmentAgent(db_instance=test_db)
+        initial_cash = inv.get_cash_balance()
+
+        # 1. Test execute_trade with non-positive and non-finite prices
+        invalid_prices = [-50.0, 0.0, float("nan"), float("inf"), float("-inf")]
+        for p in invalid_prices:
+            res_buy = inv.execute_trade("BUY", "AAPL", 10.0, price=p)
+            assert res_buy["status"] == "error"
+            assert "Price must be greater than 0 and finite" in res_buy["message"]
+            assert res_buy["cash_remaining"] == initial_cash
+            assert inv.get_cash_balance() == initial_cash
+
+            res_sell = inv.execute_trade("SELL", "AAPL", 10.0, price=p)
+            assert res_sell["status"] == "error"
+            assert "Price must be greater than 0 and finite" in res_sell["message"]
+            assert res_sell["cash_remaining"] == initial_cash
+            assert inv.get_cash_balance() == initial_cash
+
+        # 2. Test estimate_trade with non-positive and non-finite prices
+        for p in invalid_prices:
+            est = inv.estimate_trade("BUY", "AAPL", 10.0, price=p)
+            assert not est["can_execute"]
+            assert "Invalid trade price" in est["reason"]
+
+        # Ensure no position or balance mutation occurred
+        assert inv.get_shares_owned("AAPL") == 0.0
+        assert inv.get_cash_balance() == initial_cash
+    finally:
+        if os.path.exists(temp_db_path):
+            os.remove(temp_db_path)
+
+
+def test_def_011_fractional_position_micro_holdings_retention():
+    """DEF-011: Retention of micro-fractional holdings on partial sell orders."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+        temp_db_path = tf.name
+
+    try:
+        test_db = Database(db_path=temp_db_path)
+        inv = InvestmentAgent(db_instance=test_db)
+
+        # 1. Buy 1.0 share of NVDA
+        buy_res = inv.execute_trade("BUY", "NVDA", 1.0, price=100.0)
+        assert buy_res["status"] == "success"
+        assert inv.get_shares_owned("NVDA") == 1.0
+
+        # 2. Partial sell of 0.99995 shares -> leaves 0.00005 shares
+        sell_res = inv.execute_trade("SELL", "NVDA", 0.99995, price=120.0)
+        assert sell_res["status"] == "success"
+
+        # 3. Verify remaining micro-fractional position is retained and not deleted
+        pos = test_db.get_position("NVDA")
+        assert pos is not None
+        assert pos["shares"] == pytest.approx(0.00005, abs=1e-8)
+        assert inv.get_shares_owned("NVDA") == pytest.approx(0.00005, abs=1e-8)
+
+        # 4. Selling the remaining micro-fractional shares (0.00005) cleanly deletes position
+        sell_rem = inv.execute_trade("SELL", "NVDA", 0.00005, price=120.0)
+        assert sell_rem["status"] == "success"
+        assert test_db.get_position("NVDA") is None
+        assert inv.get_shares_owned("NVDA") == 0.0
+    finally:
+        if os.path.exists(temp_db_path):
+            os.remove(temp_db_path)
+
+
+def test_def_012_sqlite_wal_mode_and_busy_timeout_pragma():
+    """DEF-012: SQLite connections configure WAL mode and busy timeout pragmas."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+        temp_db_path = tf.name
+
+    try:
+        test_db = Database(db_path=temp_db_path)
+        with test_db.get_connection() as conn:
+            # Check journal_mode is WAL
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA journal_mode;")
+            journal_mode = cursor.fetchone()[0]
+            assert str(journal_mode).lower() == "wal"
+
+            # Check busy_timeout is 5000ms
+            cursor.execute("PRAGMA busy_timeout;")
+            busy_timeout = cursor.fetchone()[0]
+            assert int(busy_timeout) == 5000
+    finally:
+        if os.path.exists(temp_db_path):
+            os.remove(temp_db_path)
+

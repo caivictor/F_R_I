@@ -104,3 +104,37 @@ Screenshot: screenshots/adv-009-private-stock-spacex-trade-execution.png
 
 Disposition: ACCEPTED -> DEF-009
 
+## ADV-010: Negative, Zero, and Non-Finite Execution Prices Bypass Validation in Trade Execution Engine Causing Balance Inversion and SQLite Crash
+
+- Session: phase-3 gate
+- Suggested severity: HIGH
+
+What I did: Injected non-positive and non-finite price parameters into `InvestmentAgent.execute_trade` (e.g., `price=-50.0`, `price=0.0`, `price=float('nan')`, `price=float('inf')`).
+Expected: `InvestmentAgent.execute_trade` should enforce strict positive finite price constraints (`price > 0` and `math.isfinite(price)`), rejecting invalid prices before attempting portfolio mutations or database transactions.
+Actual: When `price <= 0` is passed, `execute_trade` executes the trade. A BUY order with negative price adds cash to the portfolio (negative cost basis reduces expenditure into a positive cash credit), allowing unauthorized balance expansion. When `price=float('nan')` is passed, `cash_balance` becomes NaN, causing `sqlite3.IntegrityError: NOT NULL constraint failed: portfolio_summary.cash_balance` and crashing with an unhandled exception.
+
+Disposition: ACCEPTED -> DEF-010
+
+## ADV-011: Fractional Position Deletion Threshold in Sell Execution Silently Purges Remaining Micro-Holdings
+
+- Session: phase-3 gate
+- Suggested severity: MEDIUM
+
+What I did: Owned 1.0 share of equity and executed a partial sell order for 0.99995 shares (or purchased/owned fractional shares <= 0.0001).
+Expected: The portfolio positions table should accurately record and retain fractional shareholdings down to floating point precision (or clean up only if `new_shares <= 0` / within floating-point epsilon like 1e-9).
+Actual: In `backend/app/agents/investment.py` line 244, `if new_shares <= 0.0001:` triggers immediate and unconditional deletion of the position record (`self._db.delete_position(cleaned_ticker)`). As a result, a user selling 0.99995 shares has their remaining 0.00005 shares permanently wiped from their portfolio database record without realization or cash compensation.
+
+Disposition: ACCEPTED -> DEF-011
+
+## ADV-012: SQLite Database Connections Lack WAL Mode and Busy Timeout Pragma Causing Potential Locking Contention
+
+- Session: phase-3 gate
+- Suggested severity: LOW
+
+What I did: Evaluated database connection initialization in `backend/app/db/database.py` for multi-threaded/multi-agent concurrent operations.
+Expected: In a single-process architecture serving simultaneous agent requests, background tasks, and web clients, SQLite connections should configure `PRAGMA journal_mode = WAL;` and `PRAGMA busy_timeout = 5000;` on connection to avoid SQLite database lock contention and maximize read/write concurrency.
+Actual: Connections are established via raw `sqlite3.connect(self.db_path, check_same_thread=False)` with default journal mode (`DELETE`) and without configuring WAL mode or busy timeout pragmas.
+
+Disposition: ACCEPTED -> DEF-012
+
+

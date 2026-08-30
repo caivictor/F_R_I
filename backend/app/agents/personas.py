@@ -43,6 +43,19 @@ class PersonaManager:
 
     def __init__(self) -> None:
         self._personas: Dict[str, str] = dict(DEFAULT_PERSONAS)
+        self._load_from_db()
+
+    def _load_from_db(self) -> None:
+        """Load persisted personas from SQLite database if available."""
+        try:
+            from backend.app.db.database import db
+            stored = db.get_all_personas()
+            if stored:
+                for agent, prompt in stored.items():
+                    if agent.lower() in DEFAULT_PERSONAS:
+                        self._personas[agent.lower()] = prompt
+        except Exception:
+            pass
 
     def get_persona(self, agent: str) -> str:
         """Get the active persona for a specific agent."""
@@ -57,21 +70,36 @@ class PersonaManager:
         return dict(DEFAULT_PERSONAS)
 
     def set_persona(self, agent: str, persona: str) -> bool:
-        """Set a custom persona for an agent."""
+        """Set a custom persona for an agent and persist to database."""
         agent_key = agent.lower()
         if agent_key not in DEFAULT_PERSONAS:
             return False
         self._personas[agent_key] = persona
+        try:
+            from backend.app.db.database import db
+            db.save_persona(agent_key, persona)
+        except Exception:
+            pass
         return True
 
     def reset_persona(self, agent: Optional[str] = None) -> None:
-        """Reset an agent persona or all personas to default."""
+        """Reset an agent persona or all personas to default and persist to database."""
         if agent is None or agent.strip() == "":
             self._personas = dict(DEFAULT_PERSONAS)
+            try:
+                from backend.app.db.database import db
+                db.reset_personas(None)
+            except Exception:
+                pass
         else:
             agent_key = agent.lower()
             if agent_key in DEFAULT_PERSONAS:
                 self._personas[agent_key] = DEFAULT_PERSONAS[agent_key]
+                try:
+                    from backend.app.db.database import db
+                    db.reset_personas(agent_key)
+                except Exception:
+                    pass
 
 
 persona_manager = PersonaManager()

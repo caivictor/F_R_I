@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 
 from backend.app.routers.chat import router as chat_router
 from backend.app.routers.personas import router as personas_router
+from backend.app.routers.portfolio import router as portfolio_router
 
 app = FastAPI(
     title="F.R.I. Financial Research & Investment API",
@@ -28,6 +29,7 @@ app.add_middleware(
 # API Routers
 app.include_router(chat_router)
 app.include_router(personas_router)
+app.include_router(portfolio_router)
 
 
 @app.get("/api/health", tags=["health"])

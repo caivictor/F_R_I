@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     DEFAULT_TIMEOUT_SECONDS: int = 15
+    DATABASE_PATH: str = "data/fri.db"
 
     model_config = SettingsConfigDict(
         env_file=".env",

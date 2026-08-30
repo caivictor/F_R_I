@@ -269,7 +269,8 @@ class ManagerAgent:
                 await self._emit_step(
                     progress_callback, steps, "manager", "[Manager] User declined trade confirmation. Order cancelled."
                 )
-                response_text = f"Trade order for **{trade['action']} {trade['quantity']} shares of {trade['ticker']}** has been **cancelled**."
+                qty_str = f"{int(trade['quantity'])}" if float(trade['quantity']).is_integer() else f"{trade['quantity']:.2f}"
+                response_text = f"Trade order for **{trade['action']} {qty_str} shares of {trade['ticker']}** has been **cancelled**."
                 session.add_message("assistant", response_text)
                 return {
                     "session_id": session.session_id,
@@ -281,7 +282,146 @@ class ManagerAgent:
                 # Unrelated message received while a trade was pending - invalidate pending trade
                 session.pending_trade = None
 
-        # 2. Check for Trade Intent (Buy / Sell) -> Trigger 2-Step Confirmation Guardrail
+        # 2. Check for Portfolio Reset Intent
+        if re.search(r"\b(reset\s+(?:my\s+)?(?:portfolio|account|balance|holdings|baseline)|reset\s+to\s+\$?(?:100k|100,000|100000))\b", cleaned, re.IGNORECASE):
+            await self._emit_step(
+                progress_callback, steps, "manager", "[Manager] Routing portfolio reset request to Investment Agent..."
+            )
+            await self._emit_step(
+                progress_callback, steps, "investment", "[Investment Agent] Resetting paper trading portfolio to $100,000 baseline..."
+            )
+            reset_result = investment_agent.reset_portfolio()
+            response_text = (
+                "### Portfolio Reset Complete\n\n"
+                f"{reset_result['message']}\n\n"
+                f"- **Cash Balance:** `${reset_result['cash_balance']:,.2f}`\n"
+                "- **Holdings:** Cleared (0 positions)\n"
+                "- **Realized P/L:** `$0.00`"
+            )
+            session.add_message("assistant", response_text)
+            return {
+                "session_id": session.session_id,
+                "response": response_text,
+                "steps": steps,
+                "agent_data": reset_result,
+            }
+
+        # 3. Check for Cash Deposit Intent
+        deposit_match = re.search(r"\b(?:deposit|fund\s+account|add\s+cash)\s+\$?(\d+(?:,\d{3})*(?:\.\d+)?)\b", user_message, re.IGNORECASE)
+        if not deposit_match and cleaned.startswith("deposit"):
+            deposit_match = re.search(r"\bdeposit\s+\$?(\d+(?:,\d{3})*(?:\.\d+)?)", user_message, re.IGNORECASE)
+        if deposit_match:
+            raw_amt = deposit_match.group(1).replace(",", "")
+            amt = float(raw_amt)
+            await self._emit_step(
+                progress_callback, steps, "manager", f"[Manager] Processing cash deposit of ${amt:,.2f}..."
+            )
+            await self._emit_step(
+                progress_callback, steps, "investment", f"[Investment Agent] Depositing ${amt:,.2f} into cash reserves..."
+            )
+            dep_result = investment_agent.deposit_cash(amt)
+            if dep_result["status"] == "success":
+                response_text = (
+                    "### Cash Deposit Successful\n\n"
+                    f"Successfully deposited **${amt:,.2f}** into your portfolio.\n\n"
+                    f"- **Updated Cash Balance:** `${dep_result['cash_balance']:,.2f}`\n"
+                    f"- **Total Capital Deposited:** `${dep_result['total_deposits']:,.2f}`"
+                )
+            else:
+                response_text = f"### Deposit Failed\n\n{dep_result['message']}"
+            session.add_message("assistant", response_text)
+            return {
+                "session_id": session.session_id,
+                "response": response_text,
+                "steps": steps,
+                "agent_data": dep_result,
+            }
+
+        # 4. Check for Cash Withdrawal Intent
+        withdraw_match = re.search(r"\b(?:withdraw|take\s+out)\s+(?:cash\s+)?\$?(\d+(?:,\d{3})*(?:\.\d+)?)\b", user_message, re.IGNORECASE)
+        if withdraw_match:
+            raw_amt = withdraw_match.group(1).replace(",", "")
+            amt = float(raw_amt)
+            await self._emit_step(
+                progress_callback, steps, "manager", f"[Manager] Processing cash withdrawal of ${amt:,.2f}..."
+            )
+            await self._emit_step(
+                progress_callback, steps, "investment", f"[Investment Agent] Validating cash balance and processing withdrawal of ${amt:,.2f}..."
+            )
+            with_result = investment_agent.withdraw_cash(amt)
+            if with_result["status"] == "success":
+                response_text = (
+                    "### Cash Withdrawal Successful\n\n"
+                    f"Successfully withdrew **${amt:,.2f}** from your portfolio.\n\n"
+                    f"- **Remaining Cash Balance:** `${with_result['cash_balance']:,.2f}`\n"
+                    f"- **Total Capital Withdrawn:** `${with_result['total_withdrawals']:,.2f}`"
+                )
+            else:
+                response_text = (
+                    "### Withdrawal Failed\n\n"
+                    f"**Reason:** {with_result['message']}\n\n"
+                    f"**Current Cash Available:** `${with_result.get('cash_balance', investment_agent.get_cash_balance()):,.2f}`"
+                )
+            session.add_message("assistant", response_text)
+            return {
+                "session_id": session.session_id,
+                "response": response_text,
+                "steps": steps,
+                "agent_data": with_result,
+            }
+
+        # 5. Check for Dividend Distribution Intent
+        dividend_match = re.search(r"\b(?:record|log|add)\s+dividend\s+(?:of\s+)?\$?(\d+(?:\.\d+)?)\s*(?:per\s+share\s+)?(?:for\s+)?([A-Za-z0-9\$\.\:\-]+)", user_message, re.IGNORECASE)
+        if dividend_match:
+            amt_val = float(dividend_match.group(1))
+            ticker_val = dividend_match.group(2).replace("$", "").upper().strip()
+            is_per_share = "per share" in user_message.lower()
+            await self._emit_step(
+                progress_callback, steps, "manager", f"[Manager] Logging dividend for {ticker_val}..."
+            )
+            await self._emit_step(
+                progress_callback, steps, "investment", f"[Investment Agent] Updating cumulative dividends and cash for {ticker_val}..."
+            )
+            if is_per_share:
+                div_result = investment_agent.record_dividend(ticker=ticker_val, amount_per_share=amt_val)
+            else:
+                div_result = investment_agent.record_dividend(ticker=ticker_val, total_amount=amt_val)
+
+            if div_result["status"] == "success":
+                response_text = (
+                    "### Dividend Distribution Recorded\n\n"
+                    f"{div_result['message']}\n\n"
+                    f"- **Cumulative Dividends for {ticker_val}:** `${div_result['cumulative_dividends']:,.2f}`\n"
+                    f"- **Updated Cash Balance:** `${div_result['cash_balance']:,.2f}`"
+                )
+            else:
+                response_text = f"### Dividend Recording Failed\n\n**Reason:** {div_result['message']}"
+            session.add_message("assistant", response_text)
+            return {
+                "session_id": session.session_id,
+                "response": response_text,
+                "steps": steps,
+                "agent_data": div_result,
+            }
+
+        # 6. Check for Transaction History / Audit Log Intent
+        if re.search(r"\b(transaction history|transactions|trade history|order history|audit log|recent trades|history of orders)\b", cleaned, re.IGNORECASE):
+            await self._emit_step(
+                progress_callback, steps, "manager", "[Manager] Fetching transaction history and audit log from Investment Agent..."
+            )
+            await self._emit_step(
+                progress_callback, steps, "investment", "[Investment Agent] Retrieving historical order logs from SQLite database..."
+            )
+            tx_res = investment_agent.get_transaction_history()
+            session.add_message("assistant", tx_res["summary_markdown"])
+            return {
+                "session_id": session.session_id,
+                "response": tx_res["summary_markdown"],
+                "steps": steps,
+                "agent_data": tx_res,
+            }
+
+        # 7. Check for Trade Intent (Buy / Sell) -> Trigger 2-Step Confirmation Guardrail
         trade_params = self._extract_trade_parameters(user_message, session)
         if trade_params:
             action = trade_params["action"]

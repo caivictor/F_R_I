@@ -1,5 +1,63 @@
 # DEFECTS
 
+## DEF-012: SQLite Database Connections Lack WAL Mode and Busy Timeout Pragma Causing Potential Locking Contention
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-012)
+- Phase: 3
+
+Steps to reproduce:
+1. Initialize the SQLite database connection in `backend/app/db/database.py`.
+2. Inspect connection pragmas and journal mode during concurrent agent queries and background write operations.
+
+Expected: In a single-process architecture serving simultaneous agent requests, background tasks, and web clients, SQLite connections should configure `PRAGMA journal_mode = WAL;` and `PRAGMA busy_timeout = 5000;` on connection to avoid SQLite database lock contention and maximize read/write concurrency.
+Actual: Connections are established via raw `sqlite3.connect(self.db_path, check_same_thread=False)` with default journal mode (`DELETE`) and without configuring WAL mode or busy timeout pragmas.
+
+History:
+- qa: opened
+- orchestrator: set FIX-READY (backend-dev: Configured timeout=5.0 along with PRAGMA journal_mode = WAL and PRAGMA busy_timeout = 5000 in backend/app/db/database.py)
+- qa: closed (retested and verified WAL journal mode and 5000ms busy timeout pragma on database connections in test_def_012_sqlite_wal_mode_and_busy_timeout_pragma)
+
+## DEF-011: Fractional Position Deletion Threshold in Sell Execution Silently Purges Remaining Micro-Holdings
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-011)
+- Phase: 3
+
+Steps to reproduce:
+1. Start the application backend with a portfolio holding 1.0 share of an equity.
+2. Execute a partial sell order for 0.99995 shares (or hold micro-fractional shares <= 0.0001).
+3. Inspect the remaining holdings in the portfolio positions table.
+
+Expected: The portfolio positions table should accurately record and retain fractional shareholdings down to floating point precision (or clean up only if `new_shares <= 0` / within floating-point epsilon like 1e-9).
+Actual: In `backend/app/agents/investment.py` line 244, `if new_shares <= 0.0001:` triggers immediate and unconditional deletion of the position record (`self._db.delete_position(cleaned_ticker)`). As a result, a user selling 0.99995 shares has their remaining 0.00005 shares permanently wiped from their portfolio database record without realization or cash compensation.
+
+History:
+- qa: opened
+- orchestrator: set FIX-READY (backend-dev: Adjusted sell position cleanup and share sufficiency checks to use 1e-9 epsilon)
+- qa: closed (retested and verified retention of micro-fractional positions down to 1e-9 epsilon on partial sells in test_def_011_fractional_position_micro_holdings_retention)
+
+## DEF-010: Negative, Zero, and Non-Finite Execution Prices Bypass Validation in Trade Execution Engine Causing Balance Inversion and SQLite Crash
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-010)
+- Phase: 3
+
+Steps to reproduce:
+1. Start the application backend.
+2. Invoke `InvestmentAgent.execute_trade` with non-positive or non-finite price parameters (e.g., `price=-50.0`, `price=0.0`, `price=float('nan')`, or `price=float('inf')`).
+
+Expected: `InvestmentAgent.execute_trade` should enforce strict positive finite price constraints (`price > 0` and `math.isfinite(price)`), rejecting invalid prices before attempting portfolio mutations or database transactions.
+Actual: When `price <= 0` is passed, `execute_trade` executes the trade. A BUY order with negative price adds cash to the portfolio (negative cost basis reduces expenditure into a positive cash credit), allowing unauthorized balance expansion. When `price=float('nan')` is passed, `cash_balance` becomes NaN, causing `sqlite3.IntegrityError: NOT NULL constraint failed: portfolio_summary.cash_balance` and crashing with an unhandled exception.
+
+History:
+- qa: opened
+- orchestrator: set FIX-READY (backend-dev: Enforced positive finite price validation in execute_trade and estimate_trade)
+- qa: closed (retested and verified positive finite price validation constraints on execute_trade and estimate_trade preventing balance inversion and crash in test_def_010_negative_zero_and_nonfinite_price_validation)
+
 ## DEF-009: Private and Non-US Equities Bypass Guardrails in Direct Trade Parameter Extraction and Paper Execution
 
 - Status: CLOSED
