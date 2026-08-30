@@ -1,7 +1,7 @@
 ---
 description: Adversarial reviewer for F.R.I.. Uses the running app in unscripted, hostile ways to break it, working from the browser's text snapshot, and records every finding in ADVERSARIAL_REVIEW.md. Never fixes, never triages its own findings.
 mode: subagent
-model: gemini-flash-latest
+model: gemini-3.7-flash
 permission:
   edit:
     "*": deny

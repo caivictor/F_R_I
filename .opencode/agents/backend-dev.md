@@ -1,7 +1,7 @@
 ---
 description: Backend developer for F.R.I.. Implements the Python FastAPI server, WebSocket endpoints, Whisper STT integration, and backend unit tests from the orchestrator's task specs.
 mode: subagent
-model: gemini-flash-latest
+model: gemini-3.5-flash
 permission:
   edit:
     "DEFECTS.md": deny

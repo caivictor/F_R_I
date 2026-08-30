@@ -1,7 +1,7 @@
 ---
 description: QA for F.R.I.. Writes and runs the end-to-end suite, runs the full test suites, captures and inspects screenshots, and owns DEFECTS.md. Never fixes product code; only qa may close a defect.
 mode: subagent
-model: gemini-flash-latest
+model: gemini-3.7-flash
 permission:
   edit:
     "*": deny

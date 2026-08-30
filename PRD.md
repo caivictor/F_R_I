@@ -9,7 +9,7 @@ A standalone web application powered by a multi-agent AI system. The application
 
 ## 2. Core Architecture & Agent Definitions
 
-- **Manager Agent (Model: Gemini Pro Latest):**
+- **Manager Agent (Model: Gemini Flash Latest):**
   - **Role:** Master Orchestrator, User Interface Proxy, & System Supervisor.
   - **Core Responsibilities:**
     1. **Intelligent Intent Routing & Workflow Chaining:**

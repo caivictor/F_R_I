@@ -1,7 +1,7 @@
 ---
 description: Delivery lead for F.R.I.. Plans each phase, delegates all coding, reviews evidence, judges screenshots, triages adversary findings, and gates phases against PRD.md. Never writes code.
 mode: primary
-model: gemini-pro-latest
+model: gemini-3.7-flash
 permission:
   edit:
     "*": deny

@@ -34,6 +34,15 @@ commands: if the edit tool would deny a file, do not modify that file any other 
 - Keep it simple: small modules, clear names, no defensive programming, no overengineering.
   Prefer popular, well-supported libraries over custom code.
 
+## Architecture & Technical Constraints
+
+- **Minimal Setup (No Docker/DB Daemons)**: The app runs in a standard Python 3.10+ `venv` and uses local SQLite. Do NOT add Docker, PostgreSQL, Redis, or other infrastructure dependencies.
+- **Single Process**: The FastAPI backend MUST directly serve the pre-built static React/Next.js frontend assets. Do NOT rely on a separate frontend development server in production; a single unified launcher is expected.
+- **Agent Guardrails**:
+  - The Manager Agent MUST enforce an explicit two-step confirmation for any trade order.
+  - The Analysis Agent MUST strictly reject requests involving non-US and private companies.
+  - Hard timeouts of 15-20 seconds MUST be enforced on all external tooling (e.g., `yfinance`, Google News RSS).
+
 ## DEFECTS.md — the defect ledger
 
 All defects live in `DEFECTS.md` at the repo root, one entry per defect, newest first.
