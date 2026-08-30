@@ -24,6 +24,36 @@ F.R.I. is an automated financial research and portfolio management assistant pow
 
 ---
 
+## User Experience & Interface Showcase
+
+### 1. Terminal Overview & Starter Actions
+The financial terminal features a responsive dark theme, real-time agent connection status, quick prompt triggers, and a multi-session workflow.
+
+![F.R.I. Main Financial Terminal](screenshots/phase1-main.png)
+
+---
+
+### 2. Live Market Research & Long-Term Investment Dossiers
+The Research Agent scans Google News RSS headlines and hands off top public companies to the Analysis Agent, generating quantitative dossiers with comprehensive financial scorecards (ROIC, FCF, D/E, P/E, Margins).
+
+![Market Research and Quantitative Equity Analysis](screenshots/phase2-research-analysis.png)
+
+---
+
+### 3. SQLite Paper Portfolio & Two-Step Trade Confirmation
+Paper trading is backed by local SQLite persistence ($100,000 baseline cash). The Manager Agent intercepts orders with an explicit two-step confirmation prompt displaying live price estimates and available cash before execution.
+
+![Portfolio Valuation and Two-Step Trade Confirmation](screenshots/phase3-portfolio.png)
+
+---
+
+### 4. Custom Persona Management & Failsafe Defaults
+Users can inspect and customize system prompts for the Manager, Research, Analysis, and Investment agents, with one-click "Reset to Default" failsafe controls.
+
+![Agent Persona Management Modal](screenshots/phase1-personas.png)
+
+---
+
 ## Architecture Overview
 
 ```
