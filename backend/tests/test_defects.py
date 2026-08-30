@@ -1,4 +1,4 @@
-"""Unit tests verifying fixes for DEF-001 through DEF-012."""
+"""Unit tests verifying fixes for DEF-001 through DEF-014."""
 
 import math
 import os
@@ -459,4 +459,94 @@ def test_def_012_sqlite_wal_mode_and_busy_timeout_pragma():
     finally:
         if os.path.exists(temp_db_path):
             os.remove(temp_db_path)
+
+
+@pytest.mark.asyncio
+async def test_def_013_contrary_cancellation_precedence_in_trade_confirmation():
+    """DEF-013: Prioritize cancellation/negation/contrary tokens over affirmation in trade confirmation."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Reset portfolio
+        await client.post("/api/portfolio/reset", json={"initial_cash": 100000.0})
+
+        cancellation_phrases = [
+            "ok please cancel",
+            "sure, cancel that order",
+            "proceed to analyze AAPL instead",
+            "ok, do not execute this",
+            "do not execute",
+            "stop, instead analyze TSLA",
+            "never mind, cancel",
+        ]
+
+        for phrase in cancellation_phrases:
+            # 1. Initiate Buy Order
+            res1 = await client.post(
+                "/api/chat",
+                json={"message": "Buy 10 shares of NVDA"},
+            )
+            assert res1.status_code == 200
+            data1 = res1.json()
+            session_id = data1["session_id"]
+            assert "Trade Order Confirmation Required" in data1["response"]
+
+            # 2. Issue cancellation / contrary phrase with affirmative words
+            res2 = await client.post(
+                "/api/chat",
+                json={"message": phrase, "session_id": session_id},
+            )
+            assert res2.status_code == 200
+            data2 = res2.json()
+
+            # Must be cancelled and NOT executed
+            assert "Trade Confirmation & Execution" not in data2["response"]
+            assert "cancelled" in data2["response"].lower()
+
+            # Verify no positions were created
+            port_res = await client.get("/api/portfolio")
+            assert port_res.status_code == 200
+            assert port_res.json()["positions"] == []
+
+        # 3. Verify genuinely affirmative confirmation without contrary tokens executes normally
+        res_trade = await client.post(
+            "/api/chat",
+            json={"message": "Buy 5 shares of AAPL"},
+        )
+        sess = res_trade.json()["session_id"]
+        assert "Trade Order Confirmation Required" in res_trade.json()["response"]
+
+        res_exec = await client.post(
+            "/api/chat",
+            json={"message": "yes proceed and execute", "session_id": sess},
+        )
+        assert res_exec.status_code == 200
+        assert "Trade Confirmation & Execution" in res_exec.json()["response"]
+
+        port_after = await client.get("/api/portfolio")
+        tickers = [p["ticker"] for p in port_after.json()["positions"]]
+        assert "AAPL" in tickers
+
+
+def test_def_014_word_boundary_company_alias_resolution():
+    """DEF-014: Regex word-boundary matching in _resolve_ticker prevents false alias substring overrides."""
+    agent = AnalysisAgent()
+
+    # Substrings containing aliases as sub-words must NOT resolve to alias targets
+    assert agent._resolve_ticker("AMDOCS") == "AMDOCS"
+    assert agent._resolve_ticker("Analyze AMDOCS fundamentals") == "AMDOCS"
+    assert agent._resolve_ticker("METAMATERIALS") == "METAMATERIALS"
+    assert agent._resolve_ticker("INTELLECT") == "INTELLECT"
+    assert agent._resolve_ticker("CHASEN") == "CHASEN"
+
+    # Known company aliases must continue to resolve correctly
+    assert agent._resolve_ticker("AMD") == "AMD"
+    assert agent._resolve_ticker("Analyze AMD fundamentals") == "AMD"
+    assert agent._resolve_ticker("Apple") == "AAPL"
+    assert agent._resolve_ticker("Microsoft") == "MSFT"
+    assert agent._resolve_ticker("Google") == "GOOGL"
+    assert agent._resolve_ticker("Meta") == "META"
+    assert agent._resolve_ticker("Chase") == "JPM"
+    assert agent._resolve_ticker("Intel") == "INTC"
+    assert agent._resolve_ticker("Eli Lilly") == "LLY"
+    assert agent._resolve_ticker("$AMZN") == "AMZN"
 

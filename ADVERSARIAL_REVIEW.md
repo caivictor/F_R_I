@@ -137,4 +137,27 @@ Actual: Connections are established via raw `sqlite3.connect(self.db_path, check
 
 Disposition: ACCEPTED -> DEF-012
 
+## ADV-013: Affirmation Preamble in Contrary and Cancellation Commands Triggers False Positive Trade Confirmation Execution
+
+- Session: final
+- Suggested severity: HIGH
+
+What I did: Initiated a trade order ("Buy 10 shares of NVDA") to place the session in pending confirmation state. In the confirmation turn, submitted contradictory and cancellation phrases that include casual affirmation preambles or contrary instructions, such as: "ok please cancel", "sure, cancel that order", "proceed to analyze AAPL instead", "ok, do not execute this", and "ok, buy 5 shares of MSFT instead".
+Expected: The confirmation interlock should prioritize explicit cancellation keywords or check for negation/compound commands, cancelling or clearing the pending trade when the user requests cancellation or changes intent, rather than executing the order.
+Actual: In `backend/app/agents/manager.py`, the condition `if re.search(r"\b(yes|confirm|proceed|yep|sure|ok|execute)\b", cleaned, re.IGNORECASE)` is evaluated first. Because "ok", "sure", or "proceed" is matched as a standalone token anywhere in the prompt, prompts like "ok please cancel", "sure, cancel that order", and "proceed to analyze AAPL instead" are interpreted as affirmative confirmations, executing the pending trade immediately against user intent.
+
+Disposition: ACCEPTED -> DEF-013
+
+## ADV-014: Unanchored Substring Matching in Company Alias Resolution Overrides Distinct Tickers and Company Names
+
+- Session: final
+- Suggested severity: MEDIUM
+
+What I did: Requested fundamental analysis for public companies whose names or ticker symbols contain known company aliases as substrings (e.g., "Analyze AMDOCS fundamentals" for Amdocs Ltd NYSE: DOX, "Analyze INTELLECT" for Intellect Design Arena, "Analyze METAMATERIALS", or "Analyze CHASEN").
+Expected: `_resolve_ticker` should use exact or word-boundary matching when mapping company aliases so that distinct equities and companies containing alias substrings are not falsely mapped to other entities.
+Actual: In `backend/app/agents/analysis.py`, `_resolve_ticker` iterates through `COMPANY_ALIASES` checking `if alias in cleaned: return symbol` without word-boundary constraints. Consequently, "AMDOCS" is rewritten to "AMD" (Advanced Micro Devices), "INTELLECT" is rewritten to "INTC" (Intel), "METAMATERIALS" is rewritten to "META" (Meta Platforms), and "CHASEN" is rewritten to "JPM" (JPMorgan Chase).
+
+Disposition: ACCEPTED -> DEF-014
+
+
 

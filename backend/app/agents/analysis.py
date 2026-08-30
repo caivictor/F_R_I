@@ -139,7 +139,7 @@ class AnalysisAgent:
             return COMPANY_ALIASES[cleaned]
 
         for alias, symbol in COMPANY_ALIASES.items():
-            if alias in cleaned:
+            if re.search(rf"\b{re.escape(alias)}\b", cleaned, flags=re.IGNORECASE):
                 return symbol
 
         # Extract first ticker-like token

@@ -1,5 +1,46 @@
 # DEFECTS
 
+## DEF-014: Unanchored Substring Matching in Company Alias Resolution Overrides Distinct Tickers and Company Names
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-014)
+- Phase: 4
+
+Steps to reproduce:
+1. Start the application backend and initiate a chat session.
+2. Request fundamental analysis for a public company whose name or ticker contains a known company alias as a substring (e.g., "Analyze AMDOCS fundamentals", "Analyze INTELLECT", "Analyze METAMATERIALS", or "Analyze CHASEN").
+3. Observe the resolved ticker symbol and analysis target.
+
+Expected: `_resolve_ticker` should use exact or word-boundary matching when mapping company aliases so that distinct equities and companies containing alias substrings (such as AMDOCS, INTELLECT, METAMATERIALS, CHASEN) are not falsely mapped to other entities.
+Actual: In `backend/app/agents/analysis.py`, `_resolve_ticker` iterates through `COMPANY_ALIASES` checking `if alias in cleaned: return symbol` without word-boundary constraints. Consequently, "AMDOCS" is rewritten to "AMD" (Advanced Micro Devices), "INTELLECT" is rewritten to "INTC" (Intel), "METAMATERIALS" is rewritten to "META" (Meta Platforms), and "CHASEN" is rewritten to "JPM" (JPMorgan Chase).
+
+History:
+- qa: opened
+- orchestrator: set FIX-READY (backend-dev: Updated _resolve_ticker to match COMPANY_ALIASES using regex word boundaries preventing false substring overrides)
+- qa: closed (retested and verified word boundary matching on company aliases in test_def_014_word_boundary_company_alias_resolution)
+
+## DEF-013: Affirmation Preamble in Contrary and Cancellation Commands Triggers False Positive Trade Confirmation Execution
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-013)
+- Phase: 4
+
+Steps to reproduce:
+1. Start the application backend and initiate a chat session.
+2. Submit a trade command to trigger the two-step confirmation prompt (e.g., "Buy 10 shares of NVDA").
+3. In the confirmation turn, submit a contradictory or cancellation phrase containing an affirmation preamble or contrary intent (e.g., "ok please cancel", "sure, cancel that order", "proceed to analyze AAPL instead", or "ok, do not execute this").
+4. Observe the system response.
+
+Expected: The confirmation interlock should prioritize explicit cancellation keywords or check for negation/compound commands, cancelling or clearing the pending trade when the user requests cancellation or changes intent, rather than executing the order.
+Actual: In `backend/app/agents/manager.py`, the condition `if re.search(r"\b(yes|confirm|proceed|yep|sure|ok|execute)\b", cleaned, re.IGNORECASE)` is evaluated first. Because "ok", "sure", or "proceed" is matched as a standalone token anywhere in the prompt, prompts like "ok please cancel", "sure, cancel that order", and "proceed to analyze AAPL instead" are interpreted as affirmative confirmations, executing the pending trade immediately against user intent.
+
+History:
+- qa: opened
+- orchestrator: set FIX-READY (backend-dev: Reordered trade confirmation evaluation to prioritize cancellation and contrary tokens before affirmation)
+- qa: closed (retested and verified contrary/cancellation precedence during trade confirmation in test_def_013_contrary_cancellation_precedence_in_trade_confirmation)
+
 ## DEF-012: SQLite Database Connections Lack WAL Mode and Busy Timeout Pragma Causing Potential Locking Contention
 
 - Status: CLOSED

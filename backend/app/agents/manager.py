@@ -237,7 +237,36 @@ class ManagerAgent:
                 progress_callback, steps, "manager", "[Manager] Evaluating pending trade confirmation guardrail..."
             )
             trade = session.pending_trade
-            if re.search(r"\b(yes|confirm|proceed|yep|sure|ok|execute)\b", cleaned, re.IGNORECASE):
+            is_cancellation = bool(
+                re.search(
+                    r"\b(no|cancel|cancelling|cancelled|reject|rejected|nevermind|never\s+mind|stop|abort|don't|dont|do\s+not|not|instead|nah|negative|halt|decline|disregard)\b",
+                    cleaned,
+                    re.IGNORECASE,
+                )
+            )
+            is_affirmation = bool(
+                re.search(
+                    r"\b(yes|confirm|confirmed|proceed|yep|sure|ok|okay|execute|executed|affirmative)\b",
+                    cleaned,
+                    re.IGNORECASE,
+                )
+            )
+
+            if is_cancellation:
+                session.pending_trade = None
+                await self._emit_step(
+                    progress_callback, steps, "manager", "[Manager] User declined trade confirmation. Order cancelled."
+                )
+                qty_str = f"{int(trade['quantity'])}" if float(trade['quantity']).is_integer() else f"{trade['quantity']:.2f}"
+                response_text = f"Trade order for **{trade['action']} {qty_str} shares of {trade['ticker']}** has been **cancelled**."
+                session.add_message("assistant", response_text)
+                return {
+                    "session_id": session.session_id,
+                    "response": response_text,
+                    "steps": steps,
+                    "agent_data": {"status": "cancelled"},
+                }
+            elif is_affirmation:
                 await self._emit_step(
                     progress_callback, steps, "investment",
                     f"[Investment Agent] Executing verified order: {trade['action']} {trade['quantity']} {trade['ticker']}..."
@@ -262,21 +291,6 @@ class ManagerAgent:
                     "response": response_text,
                     "steps": steps,
                     "agent_data": exec_result,
-                }
-
-            elif re.search(r"\b(no|cancel|reject|nevermind|stop|abort)\b", cleaned, re.IGNORECASE):
-                session.pending_trade = None
-                await self._emit_step(
-                    progress_callback, steps, "manager", "[Manager] User declined trade confirmation. Order cancelled."
-                )
-                qty_str = f"{int(trade['quantity'])}" if float(trade['quantity']).is_integer() else f"{trade['quantity']:.2f}"
-                response_text = f"Trade order for **{trade['action']} {qty_str} shares of {trade['ticker']}** has been **cancelled**."
-                session.add_message("assistant", response_text)
-                return {
-                    "session_id": session.session_id,
-                    "response": response_text,
-                    "steps": steps,
-                    "agent_data": {"status": "cancelled"},
                 }
             else:
                 # Unrelated message received while a trade was pending - invalidate pending trade

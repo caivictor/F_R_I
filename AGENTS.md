@@ -1,105 +1,82 @@
-# F.R.I. (Financial Research & Investment) App — Build Rules
+# F.R.I. (Financial Research & Investment) AI Multi-Agent System — Agent Instructions
 
-These rules apply to every agent working on this project.
+Compact guidance for agents working in this repository.
 
-## The job
+---
 
-Build F.R.I. (Financial Research & Investment) App exactly as specified in [PRD.md](./PRD.md). That document
-is the contract: its phases, success criteria and final criteria decide when work is done. When in
-doubt, PRD.md wins.
+## 1. Quick Verification & Execution Commands
 
-## The team
+### Full Verification Pipeline
+Required order when validating changes: `Frontend Build -> Backend Unit Tests -> Frontend Unit Tests -> E2E Tests`
 
-- **orchestrator** (primary) — plans, delegates, reviews, gates phases. Does not write code.
-- **frontend-dev** — all frontend code and frontend unit tests.
-- **backend-dev** — all backend code, storage, seed data and backend unit tests.
-- **qa** — end-to-end tests, test runs, screenshots, DEFECTS.md. Does not fix code.
-- **adversary** — tries to break the running app; records findings in ADVERSARIAL_REVIEW.md.
+```bash
+# 1. Build frontend production assets (required before running backend single-process)
+cd frontend && npm run build && cd ..
 
-Role boundaries are enforced by permissions and are absolute. Do not work around them with shell
-commands: if the edit tool would deny a file, do not modify that file any other way.
+# 2. Run backend pytest suite (all 58 unit & integration tests)
+pytest -v
+# Run a single backend test file or test function:
+pytest backend/tests/test_phase3.py -v
+pytest backend/tests/test_defects.py::test_def_013_contrary_cancellation_precedence_in_trade_confirmation -v
 
-## Repository conventions
+# 3. Run frontend unit & component tests (Vitest)
+cd frontend && npm test -- --run && cd ..
+# Run a single frontend test file:
+cd frontend && npm test -- src/test/ChatMessageItem.test.tsx --run && cd ..
 
-- **Version Control (Git & GitHub):** Repository is `https://github.com/caivictor/F_R_I.git`. All changes must be tracked in Git. The team must:
-  1. Create a new branch for each phase or major feature.
-  2. Make small, logical commits with clear messages.
-  3. Use the `gh` CLI to create Pull Requests for review before merging into the main branch.
-  4. The orchestrator must verify that the PR is created and checks pass before gating the phase.
+# 4. Run End-to-End browser tests (Playwright)
+cd e2e && npx playwright test && cd ..
+# Run a single E2E spec:
+cd e2e && npx playwright test phase3.spec.ts && cd ..
+```
 
-- End-to-end tests, and their configuration, live under `e2e/`. Only qa writes there.
-- Screenshots live under `screenshots/`.
-- No emojis in code, comments, print statements or logging. (Emoji page icons in the product's
-  data and UI are a feature, not a violation.)
-- Keep it simple: small modules, clear names, no defensive programming, no overengineering.
-  Prefer popular, well-supported libraries over custom code.
+### Running the Application Locally
+- **Single unified process (FastAPI serving static frontend at `/` and API at `/api`)**:
+  ```bash
+  ./start.sh
+  # Or directly via uvicorn:
+  python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+  ```
 
-## Architecture & Technical Constraints
+---
 
-- **Minimal Setup (No Docker/DB Daemons)**: The app runs in a standard Python 3.10+ `venv` and uses local SQLite. Do NOT add Docker, PostgreSQL, Redis, or other infrastructure dependencies.
-- **Single Process**: The FastAPI backend MUST directly serve the pre-built static React/Next.js frontend assets. Do NOT rely on a separate frontend development server in production; a single unified launcher is expected.
-- **Agent Guardrails**:
-  - The Manager Agent MUST enforce an explicit two-step confirmation for any trade order.
-  - The Analysis Agent MUST strictly reject requests involving non-US and private companies.
-  - Hard timeouts of 15-20 seconds MUST be enforced on all external tooling (e.g., `yfinance`, Google News RSS).
+## 2. Architecture & Directory Ownership
 
-## DEFECTS.md — the defect ledger
+- `backend/app/`: FastAPI application, agent orchestrator, and SQLite persistence.
+  - `backend/app/main.py`: App entrypoint. Mounts routers and serves `frontend/dist` at `/`.
+  - `backend/app/agents/manager.py`: Manager Agent (master orchestrator, intent routing, conversational memory, 2-step trade confirmation, 3x retry self-healing).
+  - `backend/app/agents/research.py`: Research Agent (Google News RSS scraping via `httpx`/`feedparser`, top 3–5 public companies ranking).
+  - `backend/app/agents/analysis.py`: Analysis Agent (`yfinance` quantitative metrics, ROIC/FCF/debt ratios, long-term dossiers, US-public filters).
+  - `backend/app/agents/investment.py`: Investment Agent (paper portfolio, $100k cash baseline, BUY/SELL execution, cost basis, dividend tracking).
+  - `backend/app/db/database.py`: SQLite database (`positions`, `transactions`, `portfolio_summary`, `agent_personas`).
+- `frontend/`: React 18 + TypeScript + Vite + Tailwind CSS financial terminal.
+  - Build output goes to `frontend/dist/`. FastAPI serves this directory directly in production.
+- `e2e/`: Playwright test suite.
+- `screenshots/`: Evidence screenshots captured during QA and adversarial passes.
 
-All defects live in `DEFECTS.md` at the repo root, one entry per defect, newest first.
-Writers: **qa** (create, close, reopen) and **orchestrator** (record developer responses,
-reject). Nobody else edits it, ever.
+---
 
-Format, exactly:
+## 3. Critical Technical Constraints & Guardrails
 
-    ## DEF-001: Short title
+- **Zero Heavy Infrastructure**: The application MUST run inside a standard Python 3.10+ virtual environment with local SQLite (`data/fri_portfolio.db`). Never introduce Docker, PostgreSQL, Redis, or external DB daemons.
+- **Single Process**: Do NOT run separate frontend dev servers in production. The FastAPI backend must directly serve `frontend/dist` static assets.
+- **Trade Confirmation Guardrail**:
+  - The Manager Agent MUST intercept all BUY and SELL trade orders and issue an explicit two-step confirmation prompt showing cash balance, unit price, and total estimated cost.
+  - In confirmation processing, cancellation/negation tokens (`cancel`, `no`, `don't`, `stop`, `instead`) MUST take strict precedence over casual affirmation tokens (`ok`, `sure`, `proceed`).
+- **Equity Eligibility Guardrail**:
+  - The Analysis Agent and trade execution pipeline MUST reject private companies (e.g. OpenAI, SpaceX, Stripe, Canva) and OTC/non-US equities.
+  - Use regex word boundaries (`\b`) when matching private company names and ticker aliases (e.g. avoid false positives where `DIS` is matched against `Discord` or `AMDOCS` against `AMD`).
+- **External Tooling Timeouts & Error Propagation**:
+  - Enforce a hard 15–20s timeout on external network requests (`yfinance`, Google News RSS).
+  - Sub-agents must raise errors or propagate failure status on timeouts/invalid assets so the Manager Agent's automated 3x retry self-healing engine can dynamically adapt. Never silently swallow errors with synthetic data for invalid assets.
+- **SQLite Concurrency**: Always initialize SQLite connections with `PRAGMA journal_mode = WAL;` and `PRAGMA busy_timeout = 5000;`.
+- **Code Style**: No emojis in code, comments, print statements, or logging.
 
-    - Status: OPEN
-    - Severity: HIGH | MEDIUM | LOW
-    - Found by: qa | adversary (ADV-003)
-    - Phase: 3
+---
 
-    Steps to reproduce:
-    1. Numbered, specific, starting from app launch.
+## 4. Defect & Adversarial Ledgers
 
-    Expected: What should happen.
-    Actual: What happens instead.
-    Screenshot: screenshots/def-001.png (optional)
-
-    History:
-    - qa: opened
-
-Statuses and who may set them:
-
-| Status | Meaning | Set by |
-|---|---|---|
-| OPEN | Filed, or reopened after a failed retest or a bounced dispute | qa |
-| FIX-READY | A developer reports a fix is in | orchestrator, relaying the developer |
-| DISPUTED | A developer reports CANNOT REPRODUCE or WORKING AS INTENDED, with a reason | orchestrator, relaying the developer verbatim |
-| CLOSED | qa retested and confirmed the fix, or accepted the dispute | qa only |
-| REJECTED | Will not fix, with a written reason | orchestrator only |
-
-Every status change appends a History line saying who, what and why. A defect is never done
-because a developer says so — it is done when qa closes it.
-
-## ADVERSARIAL_REVIEW.md — the adversary's findings
-
-All adversary findings live in `ADVERSARIAL_REVIEW.md` at the repo root.
-Writers: **adversary** (create entries) and **orchestrator** (fill Disposition). Nobody else.
-
-Format, exactly:
-
-    ## ADV-001: Short title
-
-    - Session: phase-3 gate | final
-    - Suggested severity: HIGH | MEDIUM | LOW
-
-    What I did: ...
-    Expected: ...
-    Actual: ...
-    Screenshot: screenshots/adv-001.png (optional)
-
-    Disposition: PENDING
-
-The orchestrator replaces PENDING with either `ACCEPTED -> DEF-NNN` or `REJECTED - reason`.
-Accepted findings are reproduced and filed in DEFECTS.md by qa. No entry may remain PENDING when
-the final phase completes.
+- **`DEFECTS.md`**: Defect lifecycle is strictly controlled:
+  - Status flow: `OPEN` -> `FIX-READY` -> `CLOSED`.
+  - Only `qa` opens and closes defects. Developers report fixes to orchestrator; orchestrator sets `FIX-READY`.
+- **`ADVERSARIAL_REVIEW.md`**: Adversary records anomalies with `Disposition: PENDING`. Orchestrator resolves to `ACCEPTED -> DEF-NNN` or `REJECTED - reason`.
