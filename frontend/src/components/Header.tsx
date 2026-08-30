@@ -64,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
                 {isHealthLoading
                   ? 'Connecting...'
                   : isHealthy
-                  ? `v${health?.version || '1.0.0'}`
+                  ? `v${health?.version || '1.0.1'}`
                   : 'Offline'}
               </span>
             </div>

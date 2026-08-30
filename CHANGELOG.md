@@ -4,6 +4,17 @@ All notable changes to this project are documented below.
 
 ---
 
+## [1.0.1] - 2026-08-30
+
+### Context Memory, Multi-Candidate Evaluation & Security Agent
+- **DEF-015 Context Retention**: Resolved context loss during multi-turn research workflows by persisting all discovered company candidates in `SessionState` (`last_discovered_companies` / `last_discovered_tickers`).
+- **Quantifier Stopword Protection**: Guarded terms (`all`, `all five`, `them all`, `the rest`, `others`, `both`, `each`) against being falsely extracted as ticker symbol `$ALL` (Allstate Corp).
+- **Multi-Asset Comparative Financial Scorecards**: Added capability for Manager Agent to perform and display multi-company comparative evaluations across all candidates when requested.
+- **Conversational Context Compression**: Implemented automatic context compression in `SessionState` preserving active focus entities, candidates, and portfolio states over long sessions.
+- **Security Agent Role**: Added dedicated `security` subagent definition, initialized `SECURITY.md` vulnerability ledger, and configured strict security auditing workflows.
+
+---
+
 ## [1.0.0] - 2026-08-29
 
 ### Phase 1: Proof of Concept & Core Agent Wiring

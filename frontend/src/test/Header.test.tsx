@@ -6,7 +6,7 @@ describe('Header Component', () => {
   it('renders application branding and title correctly', () => {
     render(
       <Header
-        health={{ status: 'ok', app: 'F.R.I.', version: '1.0.0' }}
+        health={{ status: 'ok', app: 'F.R.I.', version: '1.0.1' }}
         isHealthLoading={false}
         onNewSession={vi.fn()}
         onOpenPersonas={vi.fn()}
@@ -16,7 +16,7 @@ describe('Header Component', () => {
     expect(screen.getByText('F.R.I.')).toBeInTheDocument();
     expect(screen.getByText(/Financial Research & Investment/i)).toBeInTheDocument();
     expect(screen.getByText(/Multi-Agent AI/i)).toBeInTheDocument();
-    expect(screen.getByText('v1.0.0')).toBeInTheDocument();
+    expect(screen.getByText('v1.0.1')).toBeInTheDocument();
   });
 
   it('shows connecting state when health is loading', () => {
@@ -51,7 +51,7 @@ describe('Header Component', () => {
 
     render(
       <Header
-        health={{ status: 'ok', app: 'F.R.I.', version: '1.0.0' }}
+        health={{ status: 'ok', app: 'F.R.I.', version: '1.0.1' }}
         isHealthLoading={false}
         onNewSession={handleNewSession}
         onOpenPersonas={handleOpenPersonas}
