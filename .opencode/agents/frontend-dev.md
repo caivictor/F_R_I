@@ -1,7 +1,7 @@
 ---
 description: Frontend developer for F.R.I.. Implements UI features and frontend unit tests from the orchestrator's task specs. Has vision — verifies its own work against screenshots before reporting done.
 mode: subagent
-model: gemini-3.5-flash
+model: google/gemini-3.7-flash
 permission:
   edit:
     "DEFECTS.md": deny

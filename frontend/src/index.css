@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #0b0f19;
+    --foreground: #f1f5f9;
+    --card: #111827;
+    --card-foreground: #f8fafc;
+    --primary: #38bdf8;
+    --primary-foreground: #0f172a;
+    --muted: #1e293b;
+    --muted-foreground: #94a3b8;
+    --border: #334155;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: #090d16;
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Markdown table styling */
+.markdown-body table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  font-size: 0.875rem;
+}
+
+.markdown-body th {
+  background-color: #1e293b;
+  color: #38bdf8;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid #334155;
+  border-right: 1px solid #334155;
+}
+
+.markdown-body th:last-child {
+  border-right: none;
+}
+
+.markdown-body td {
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid #1e293b;
+  border-right: 1px solid #1e293b;
+}
+
+.markdown-body td:last-child {
+  border-right: none;
+}
+
+.markdown-body tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown-body tr:nth-child(even) {
+  background-color: rgba(30, 41, 59, 0.4);
+}
+
+.markdown-body tr:hover {
+  background-color: rgba(56, 189, 248, 0.05);
+}
+
+.markdown-body pre {
+  background-color: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+}
+
+.markdown-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
