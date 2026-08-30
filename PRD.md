@@ -4,158 +4,153 @@ status: Ready
 ---
 # PRD: F.R.I. (Financial Research & Investment) AI Multi-Agent System
 
-## 1. Overview
-A standalone web application powered by a multi-agent AI system. The application serves as an automated financial research and portfolio management assistant. The user interacts entirely via a chat interface with a Manager Agent, which delegates tasks to specialized sub-agents to gather data, analyze investments, and track portfolio performance.
+## 1. Product Vision & Overview
+F.R.I. is an intelligent AI Agent chat companion designed for comprehensive financial research, equity analysis, paper portfolio management, and security oversight. Users interact through a standard, clean AI chat interface with a **Manager Agent** (Main Agent companion) that autonomously spins up specialized sub-agents on-demand:
+1. **Research Agent**: Scrapes and synthesizes live market and business news.
+2. **Analysis Agent**: Conducts fundamental and quantitative equity evaluations.
+3. **Investment Agent**: Manages paper trading portfolios, cash flows, and position tracking.
+4. **Security Agent**: Enforces input validation, safety checks, transaction guardrails, and security posture auditing.
+
+The system features robust long-context memory and persistent continuity across sessions backed by local SQLite storage, along with rolling multi-turn conversation context compression that preserves active entities, portfolio metrics, and prior research findings across turns and restarts.
 
 ## 2. Core Architecture & Agent Definitions
 
-- **Manager Agent (Model: Gemini Flash Latest):**
-  - **Role:** Master Orchestrator, User Interface Proxy, & System Supervisor.
+- **Manager Agent (Master Orchestrator & Chat Companion):**
+  - **Role:** Primary Chat Companion, Autonomous Sub-Agent Delegator, Context & Memory Manager.
   - **Core Responsibilities:**
-    1. **Intelligent Intent Routing & Workflow Chaining:**
-       - Natively parses free-form natural language to route tasks to sub-agents:
-         - *Market exploration / news query* -> Delegates to **Research Agent**.
-         - *Specific ticker / company deep dive* -> Delegates directly to **Analysis Agent**.
-         - *Portfolio balance, performance, cash adjustments, or trade execution* -> Delegates to **Investment Agent**.
-         - *End-to-End Discovery Pipeline* (e.g., "Find top tech stories and analyze promising stocks") -> Orchestrates a sequential chain: **Research -> Analysis -> Investment recommendation**.
-    2. **Trade Confirmation Guardrail (Safety Interlock):**
-       - Intercepts all trade orders (e.g., "Buy 10 shares of NVDA").
-       - Queries the Investment Agent for current market pricing and available cash balance.
-       - Generates an explicit, clear two-step confirmation prompt (e.g., *"You have $100,000 cash. Buying 10 shares of NVDA at $125/share will cost ~$1,250. Confirm purchase? [Yes / No]"*) before executing.
-    3. **Conversational Memory & Pronoun/Entity Resolution:**
-       - Retains conversational context across multi-turn dialogues, correctly resolving references and pronouns (e.g., "Analyze Apple" followed by "What is its cost basis in my portfolio?" or "Buy 15 shares of it").
-    4. **Multi-Agent Synthesis & Executive Briefings:**
-       - Ingests raw analytical reports, tables, and news digests from sub-agents and synthesizes them into concise, structured executive summaries before presenting them to the user.
-    5. **Self-Healing & Unsticking Engine:**
+    1. **Autonomous Sub-Agent Delegation & Task Progress Streaming:**
+       - Dynamically spins up specialized sub-agents on-demand based on user intent and workflow needs.
+       - Streams live task progress badges and real-time step status to the user in the chat UI (e.g., `[Manager] Spinning up Research Agent...` -> `[Research Agent] Parsing top market themes...` -> `[Manager] Delegating AAPL to Analysis Agent...` -> `[Security Agent] Verifying transaction guardrails...`).
+       - Orchestrates single-agent queries, parallel sub-agent tasks, and sequential chains (e.g., *Market News -> Deep Equity Analysis -> Security Check -> Investment Recommendation*).
+    2. **Long-Context Memory & Cross-Session Continuity:**
+       - Persistently stores customer preferences, historical research threads, multi-company candidate sets, and past trade requests in SQLite.
+       - Restores complete conversational memory and context across sessions and server restarts, enabling the user to seamlessly resume past threads.
+    3. **Context Compression & Rolling Memory Management:**
+       - Implements a rolling multi-turn conversation memory model with automated context compression.
+       - Compresses long conversational histories while strictly preserving active entities, portfolio state, research dossiers, and pending confirmations.
+    4. **Trade Confirmation Guardrail (Safety Interlock):**
+       - Intercepts all BUY and SELL trade requests.
+       - Prompts the Investment Agent for real-time market pricing and available cash balance.
+       - Issues an explicit two-step confirmation prompt displaying live price estimates, quantity, total value, and available cash before execution.
+       - Enforces strict cancellation/negation precedence over casual affirmation.
+    5. **Self-Healing & Dynamic Unsticking Engine:**
        - Monitors sub-agent execution state and enforces strict tool timeouts (15–20 seconds).
-       - Automatically retries failed sub-agent tasks up to 3 times with dynamically adjusted prompts, query rephrasing, or fallback parameters.
-       - If a failure persists after 3 retries, gracefully reports the root cause in the chat UI and requests user clarification instead of crashing.
-    6. **Real-Time Step-by-Step Status Broadcasting:**
-       - Emits real-time progress events to the web UI to provide transparency during multi-step runs (e.g., `[Manager] Initiating news scan with Research Agent...` -> `[Manager] Handing off AAPL to Analysis Agent...`).
+       - Automatically retries failed sub-agent tasks up to 3 times with dynamic prompt adjustments and query rephrasing.
+       - Gracefully reports root cause and options if a task fails after 3 retries.
+    6. **Multi-Agent Synthesis & Executive Briefings:**
+       - Synthesizes findings from Research, Analysis, Investment, and Security sub-agents into clean, actionable executive summaries with Markdown tables and key takeaways.
 
-- **Research Agent (Model: Gemini Flash Latest):**
-  - **Role:** Financial Data & News Gatherer.
-  - **Data Source (MVP):** Google News Business Section.
-  - **Access Mechanism:** Free / No-API-Key approach using Google News RSS feeds (`https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en`) and HTML scraping with `feedparser`, `httpx`, and `beautifulsoup4`.
-  - **Batch Cap & Throttling:** Filters and ranks the **Top 3 to 5 most prominent public companies** per run to control latency, rate limits, and token usage (overrideable via user prompt).
+- **Research Agent (Financial Data & News Gatherer):**
+  - **Role:** Live News Discovery & Market Trend Aggregator.
+  - **Data Source:** Google News Business RSS feeds (`https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en`) and HTML scraping via `feedparser`, `httpx`, and `beautifulsoup4` (Free / Zero API Key).
+  - **Batch Cap & Throttling:** Filters and ranks the top 3 to 5 most prominent public companies per run to optimize latency and token budgets.
   - **Responsibilities:**
-    1. Fetches and parses the latest top business and market headlines on demand without requiring paid API keys.
-    2. Extracts essential metadata: title, source publisher, publication timestamp, summary snippet, and article URL.
-    3. Synthesizes and filters the raw news feed into a structured markdown report highlighting major market themes and trending public companies.
-    4. Passes the consolidated research briefing downstream to the Analysis Agent.
+    1. Fetches and parses latest top business headlines on demand.
+    2. Extracts article metadata: title, publisher, publication timestamp, summary snippet, and URL.
+    3. Generates structured markdown summaries of major market themes and trending public companies.
+    4. Hands off candidate company sets to the Analysis Agent and Manager Agent.
 
-- **Analysis Agent (Model: Gemini Flash Latest):**
-  - **Role:** Quantitative & Fundamental Equity Analyst.
-  - **Asset Scope & Guardrails:** Enforces a strict filter for US-listed public equities (NYSE/NASDAQ) trading in USD. Private companies (e.g., OpenAI, SpaceX, Stripe) and non-US OTC listings are explicitly flagged and excluded.
-  - **Data Ingestion Tooling:** Uses `yfinance` to retrieve historical market data, fundamental financial statements (Income Statement, Balance Sheet, Cash Flow), and valuation multiples (15s request timeout).
-  - **Off-Hours Pricing:** Uses Previous Market Close prices for valuations and order estimations when markets are closed or over weekends.
+- **Analysis Agent (Quantitative & Fundamental Equity Analyst):**
+  - **Role:** Fundamental Valuation & Quantitative Investment Dossiers.
+  - **Asset Scope & Guardrails:** Restricts analysis strictly to US-listed public equities (NYSE/NASDAQ) trading in USD. Private companies (e.g., OpenAI, SpaceX, Stripe) and OTC/non-US listings are explicitly rejected.
+  - **Data Ingestion Tooling:** Queries `yfinance` for fundamental statements, historical price data, and valuation multiples (15s request timeout; uses Previous Close for off-hours valuations).
   - **Core Long-Term Holding Evaluation Metrics:**
-    1. **Profitability & Capital Efficiency (The Moat Indicators):**
-       - Return on Invested Capital (ROIC) & Return on Equity (ROE) (identifying high returns on reinvested capital).
-       - Operating Margin and Gross Margin consistency/expansion over 3-5 years.
-    2. **Cash Generation & Financial Health (Solvency & Resilience):**
-       - Free Cash Flow (FCF) and Free Cash Flow Yield (FCF / Market Cap).
-       - Total Debt-to-Equity (D/E) ratio and Interest Coverage ratio (assessing leverage and debt safety).
-       - Current & Quick Ratios (short-term liquidity buffer).
-    3. **Growth & Compounding Consistency:**
-       - Multi-year Revenue CAGR and Normalized Diluted EPS growth.
-       - Free cash flow growth trajectory over 3-5 years.
-    4. **Valuation & Entry Safety:**
-       - Trailing P/E, Forward P/E, and PEG Ratio (Price/Earnings to Growth).
-       - Price-to-Free-Cash-Flow (P/FCF) and EV/EBITDA ratios.
-       - Dividend Yield & Payout Ratio (if applicable).
-    5. **Qualitative Moat & Risk Assessment:**
-       - Competitive advantages (pricing power, network effects, high switching costs).
-       - Industry tailwinds vs. key regulatory or technological disruption risks.
-  - **Output Deliverable:** Generates a structured "Long-Term Investment Dossier" in Markdown featuring:
-    - Company Name & Ticker Symbol
-    - Executive Summary & Recent News Context
-    - Financial Health Scorecard (Key Metrics Table)
-    - Core Investment Thesis (Why this is a 3-5+ year compounder)
-    - Bull vs. Bear Risk Analysis
+    1. **Profitability & Capital Efficiency:** ROIC, ROE, Operating Margin, Gross Margin consistency/expansion.
+    2. **Solvency & Cash Generation:** Free Cash Flow (FCF), FCF Yield, Debt-to-Equity (D/E), Interest Coverage, Current & Quick Ratios.
+    3. **Growth Trajectory:** Multi-year Revenue CAGR, Normalized Diluted EPS growth, 3–5 year FCF growth.
+    4. **Valuation & Multiples:** Trailing P/E, Forward P/E, PEG Ratio, Price/FCF, EV/EBITDA, Dividend Yield & Payout Ratio.
+    5. **Qualitative Moat & Risk:** Pricing power, switching costs, competitive moat, tailwinds, and regulatory/technological risks.
+  - **Deliverable:** Generates structured "Long-Term Investment Dossiers" with Financial Health Scorecards and Bull/Bear risk analyses.
 
-- **Investment Agent (Model: Gemini Flash Latest):**
-  - **Role:** Portfolio Manager & Execution Engine.
-  - **Default Bootstrap:** Initializes the paper-trading account with a default balance of **$100,000.00 USD**.
+- **Investment Agent (Portfolio Manager & Execution Engine):**
+  - **Role:** Paper Trading Execution, Portfolio Accounting, & Performance Tracking.
+  - **Baseline Capital:** Initializes paper trading account with $100,000.00 USD baseline cash.
   - **Simulated Database Tracking (SQLite):**
-    - Manages a persistent SQLite database storing cash balance, asset positions, and historical transaction logs.
-    - **Data Tracked per Asset:**
-      - Ticker Symbol & Asset Name
-      - Total Shares Owned
-      - Average Cost Basis per Share & Total Invested Amount
-      - Current Market Price & Current Market Value (fetched via `yfinance`)
-      - Unrealized Profit/Loss ($ and %)
-      - Cumulative Dividends Received & Yield on Cost
-      - Portfolio Allocation Percentage (% of total portfolio)
-    - **Transaction History Log:**
-      - Timestamp, Order Type (BUY / SELL / DIVIDEND / DEPOSIT / WITHDRAW / RESET), Ticker, Quantity, Price per Share, Total Transaction Value, and Notes.
+    - Tracks positions: Ticker, Shares Owned, Average Cost Basis, Market Price (`yfinance`), Market Value, Unrealized P&L ($ / %), Cumulative Dividends, and Portfolio Allocation %.
+    - Tracks transactions: Timestamp, Order Type (BUY / SELL / DIVIDEND / DEPOSIT / WITHDRAW / RESET), Ticker, Quantity, Price, Total Value, and Notes.
   - **Core Responsibilities:**
-    1. **Order Validation & Execution:** Simulates buying and selling. Verifies sufficient cash balance before executing BUY orders, and checks sufficient share quantity before executing SELL orders. Updates cash reserves and position records automatically.
-    2. **Cash Management:** Supports commands to deposit cash, withdraw cash, or reset the portfolio back to the initial $100,000 baseline.
-    3. **Real-time Portfolio Valuation:** Queries current quotes to compute real-time Net Asset Value (NAV), total portfolio return (unrealized + realized P&L), and cash allocation.
-    4. **Dividend & Income Tracking:** Allows logging dividend distributions, updating total returns and yield on cost metrics.
-    5. **Portfolio Reporting:** Generates clean, markdown-formatted portfolio status reports, asset allocation summaries, and performance breakdowns on demand.
+    1. Validates and executes BUY/SELL orders against available cash and share balances.
+    2. Supports cash management operations (deposit, withdraw, reset to $100k).
+    3. Real-time portfolio valuation (NAV, total return, realized/unrealized P&L, cash allocation).
+    4. Dividend and yield-on-cost tracking.
+    5. Formats markdown portfolio summaries and performance reports.
 
-## 3. User Experience & Interface
-- **Primary Interface:** A clean, modern chat-based UI communicating directly with the Manager Agent. The chat UI must support full Markdown rendering for displaying financial reports and tables elegantly.
-- **Session Management & Report Export:**
-  - Multi-session chat support (or persistent session with clear history).
-  - One-click **"Export Report"** / **"Copy Markdown"** button to export dossiers and summaries directly to Obsidian-compatible Markdown format.
-- **Persona Management:** 
-  - A dedicated settings panel in the UI allowing the user to view, edit, and save the system prompt/persona for each agent.
-  - Includes a mandatory **"Reset to Default Persona"** button for every agent to recover from faulty prompts.
-  - Core JSON/Markdown formatting contracts remain enforced underneath custom persona text.
-- **Trigger Mechanism:** Manual trigger. The user clicks a button or types a prompt (e.g., "Analyze today's business news and recommend top stocks") to kick off the multi-agent workflow.
+- **Security Agent (Security Auditor & Guardrail Verifier):**
+  - **Role:** Safety Sentinel, Input Sanitization, Prompt Injection Defense, & Portfolio Risk Guardrail.
+  - **Core Responsibilities:**
+    1. **Input Sanitization & Injection Defense:** Inspects user inputs and incoming web content for malicious prompt injection patterns, unauthorized system overrides, and payload anomalies.
+    2. **Transaction & Order Risk Guardrails:** Performs secondary sanity verification on trade orders (e.g., extreme order sizes, fat-finger detection, irrational allocations, invalid ticker formats).
+    3. **Data Protection & Secret Leak Prevention:** Prevents exposure of system internals, API keys, or private environment variables in agent responses.
+    4. **Security Posture Auditing:** Audits application endpoints, headers, dependencies, and SQLite database integrity, logging any findings to `SECURITY.md`.
+
+## 3. Interface, Memory & User Experience
+
+- **Clean AI Chat Interface:**
+  - Standard, minimalist financial terminal chat interface with real-time Markdown rendering for tables, financial scorecards, and dossiers.
+  - Real-time animated sub-agent progress badges indicating live task status and delegation handoffs.
+  - Starter prompt chips for rapid workflow initiation (e.g., "Scan Market News", "Analyze AAPL", "View Portfolio", "Buy 10 NVDA").
+
+- **Long Context & Persistent Continuity:**
+  - Persistent SQLite storage for conversational sessions, retaining user preferences, past research threads, multi-company candidate sets, and previous trade requests.
+  - Instant context restoration upon user return or server restart, preserving conversational continuity without context loss.
+
+- **Context Compression & Memory Management:**
+  - Automatic sliding-window context compression: As multi-turn conversations expand, older dialogue turns are compressed into compact semantic summaries while preserving key entities (active tickers, portfolio state, financial metrics, and user instructions).
+  - High-fidelity entity retention ensures references like "it", "that company", or "the second stock we discussed" resolve accurately even in lengthy sessions.
+
+- **Obsidian & Markdown Export:**
+  - One-click copy and export of complete research dossiers, market digests, and portfolio reports formatted in Obsidian-compatible Markdown with YAML frontmatter tags.
+
+- **Persona Management Panel:**
+  - Dedicated settings modal allowing inspection and customization of system prompts for the Manager, Research, Analysis, Investment, and Security agents.
+  - Fail-safe "Reset to Default" button per agent to revert any modified persona to safe defaults.
 
 ## 4. Technical Stack & Environment Constraints
-- **Target Environment & Portability:**
-  - High portability across Linux, macOS, and Windows with minimal system prerequisites.
-  - Standard Python (3.10+) runtime using a virtual environment (`venv`) with zero heavy database daemons or mandatory Docker overhead.
-  - The FastAPI backend should serve the pre-built static frontend assets directly (or provide a single unified launcher), so end-users only need Python installed to run the application.
-- **Version Control:** Git and GitHub. The repository is hosted at `https://github.com/caivictor/F_R_I.git`. All phases must be developed on separate branches and merged via GitHub Pull Requests.
-- **Backend:** Python (FastAPI, LangChain/LangGraph, `feedparser`, `beautifulsoup4`, `httpx`, `yfinance`).
-- **Frontend:** React / Next.js with Tailwind CSS for a minimal UI focused on chat interaction, loading indicators, Markdown rendering, and settings modals.
-- **Database:** Local SQLite (storing: 1. `positions` table with cost basis, shares, dividends; 2. `transactions` table with full trade/cash audit history; 3. `portfolio_summary` with cash balance ($100k initial) and realized gains; 4. `agent_personas` for custom prompt persistence).
-- **Network / Tool Timeouts:** 15–20 seconds max per external request (`yfinance`, Google News RSS).
+
+- **Single-Process Lightweight Architecture:**
+  - Python 3.10+ virtual environment (`venv`) with zero external database daemons or mandatory Docker overhead.
+  - FastAPI backend directly serves pre-compiled React 18 + Tailwind CSS production assets from `/` and REST/SSE endpoints under `/api`.
+- **Backend Framework & Tooling:**
+  - FastAPI, Pydantic, `httpx`, `feedparser`, `beautifulsoup4`, `yfinance`, Google Gemini Flash API.
+- **Frontend Stack:**
+  - React 18, TypeScript, Vite, Tailwind CSS, Lucide Icons, Markdown renderer (`react-markdown`).
+- **Database & Storage (SQLite):**
+  - WAL mode enabled (`PRAGMA journal_mode = WAL;`, `PRAGMA busy_timeout = 5000;`).
+  - Schema tables:
+    1. `chat_sessions` & `chat_messages`: Multi-session chat history and token logs.
+    2. `conversation_memory`: Persistent context, active entity candidate sets, user preferences, and compressed summaries.
+    3. `positions`: Asset holdings, cost basis, shares, dividends.
+    4. `transactions`: Trade and cash flow audit history.
+    5. `portfolio_summary`: Real-time cash balance ($100k initial) and realized gains.
+    6. `agent_personas`: System prompt configurations and defaults.
+- **Network & Tool Timeouts:**
+  - 15–20 seconds hard timeout per external request (`yfinance`, Google News RSS).
 
 ## 5. Phased Execution Roadmap
 
-### Phase 1: Proof of Concept (PoC) & Core Agent Wiring
-- Set up the FastAPI backend and minimal React chat frontend.
-- Implement the Manager Agent connected to Gemini Pro and establish the chat loop with the user.
-- Build dummy/mock versions of the 3 sub-agents to verify the Manager can successfully delegate tasks and return a final aggregated response to the frontend.
+### Phase 1: Core Orchestrator, Chat Interface & Sub-Agent Wiring
+- Implement FastAPI server, React chat interface, and Manager Agent.
+- Establish autonomous dynamic sub-agent dispatch and streaming progress badges.
+- Setup SQLite conversation memory, session persistence, and persona manager.
 
-### Phase 2: Agent Tooling & Real Data (Research & Analysis)
-- Build the Research Agent's Google News Business parser using `feedparser` / `httpx` with top 3–5 company ranking cap.
-- Equip the Analysis Agent with financial data tools (`yfinance` with 15s timeout, Previous Close support for off-hours) and integrate Gemini Flash to process the Research Agent's handoff.
-- Implement the dynamic retry logic (up to 3 times) and error handling in the Manager Agent.
+### Phase 2: Live Market Research & Quantitative Equity Analysis
+- Implement Research Agent with Google News RSS parser and top 3–5 company ranking.
+- Implement Analysis Agent with `yfinance` fundamental metrics (ROIC, FCF, D/E, valuation multiples).
+- Implement dynamic 3x retry self-healing engine and private company guardrails.
 
-### Phase 3: Portfolio Tracking & Cash Management (Investment Agent)
-- Initialize the local SQLite database for paper trading with $100,000 default cash.
-- Equip the Investment Agent with trade validation, cash deposit/withdraw/reset, and CRUD capabilities for the local database.
-- Wire the Manager Agent to pass user execution commands (e.g., "Buy 10 shares of NVDA", "Deposit $5,000") and two-step confirmation prompts.
+### Phase 3: Paper Portfolio, Cash Management & Security Guardrails
+- Implement Investment Agent with SQLite persistence ($100k cash default), BUY/SELL validation, and 2-step trade confirmation.
+- Implement Security Agent guardrails for prompt safety, input validation, and transaction sanity.
+- Implement context compression engine for rolling multi-turn continuity.
 
-### Phase 4: UX Polish, Session Export, & Persona Management
-- Refine Markdown rendering in the chat UI with one-click Markdown copy/export for Obsidian.
-- Add clear loading states/indicators in the chat displaying real-time agent handoffs.
-- Implement the Persona Management UI with editable prompts and a "Reset to Default" failsafe button.
+### Phase 4: UX Polish, Long-Context Continuity & Obsidian Export
+- Refine long-context memory retrieval across sessions and server restarts.
+- Polish Markdown rendering, live sub-agent status badges, and one-click Obsidian export.
+- Complete comprehensive end-to-end verification, adversarial review, and security audit.
 
-## 6. Documentation, Installation & User Manual Mandates
-To ensure the application is easily installed, operated, and maintained by any user, the AI builder MUST produce and maintain:
-
-1. **`INSTALL.md` (Installation Guide):**
-   - Step-by-step installation instructions for Linux, macOS, and Windows.
-   - Python virtual environment setup (`python3 -m venv venv`) and dependency installation (`pip install -r requirements.txt`).
-   - Configuration instructions for `.env` (Gemini API Key setup).
-   - Single-command start scripts (`start.sh` for Linux/macOS and `start.bat` for Windows).
-
-2. **`USER_MANUAL.md` (Operations Manual):**
-   - Comprehensive end-user operational guide with screenshots / ASCII diagrams of the UI.
-   - Walkthrough of the Manager Agent chat commands, sample prompts for research runs, and analysis deep dives.
-   - Guide on executing paper trades, depositing/resetting cash, and understanding financial metrics (ROIC, FCF, D/E, etc.).
-   - Instructions on accessing the Persona Management settings panel to customize or reset agent system prompts.
-   - Guide on exporting reports to Markdown / Obsidian.
-
-3. **`README.md` & `CHANGELOG.md`:**
-   - Standard architectural overview, repository structure, and per-phase progress logs.
-   - Comprehensive inline code documentation across all modules, tools, and prompts.
+## 6. Documentation & Maintenance Mandates
+1. **`INSTALL.md`**: Multi-platform installation guide (Linux, macOS, Windows) and single-command launcher instructions.
+2. **`USER_MANUAL.md`**: Operational guide covering chat workflows, sub-agent capabilities, paper trading, and persona customization.
+3. **`SECURITY.md`**: Security vulnerability ledger, posture audit findings, and guardrail validations.
+4. **`DEFECTS.md` & `ADVERSARIAL_REVIEW.md`**: QA and adversarial tracking ledgers.
+5. **`README.md` & `CHANGELOG.md`**: High-level system architecture, repository structure, and version history.
