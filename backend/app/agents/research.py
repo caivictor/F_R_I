@@ -58,16 +58,20 @@ class ResearchAgent:
         """Get the current persona prompt for Research Agent."""
         return persona_manager.get_persona("research")
 
-    def _clean_html(self, raw_html: str) -> str:
+    def _clean_html(self, raw_html: Optional[str]) -> str:
         """Strip HTML tags and unescape text from news summaries."""
-        if not raw_html:
+        if not raw_html or not isinstance(raw_html, str):
             return ""
         soup = BeautifulSoup(raw_html, "html.parser")
         return soup.get_text(separator=" ", strip=True)
 
-    def _parse_publisher(self, title: str, source_title: Optional[str] = None) -> tuple[str, str]:
+    def _parse_publisher(self, title: Optional[str], source_title: Optional[str] = None) -> tuple[str, str]:
         """Extract article title and publisher name from Google News title format 'Title - Publisher'."""
-        if source_title and source_title.strip():
+        if not title or not isinstance(title, str) or not title.strip():
+            publisher = source_title.strip() if (source_title and isinstance(source_title, str) and source_title.strip()) else "Google News"
+            return "Untitled Article", publisher
+
+        if source_title and isinstance(source_title, str) and source_title.strip():
             publisher = source_title.strip()
             clean_title = title
             if " - " in title and title.rsplit(" - ", 1)[-1].strip() == publisher:
@@ -106,18 +110,24 @@ class ResearchAgent:
         articles: List[Dict[str, Any]] = []
 
         for entry in getattr(feed, "entries", []):
-            raw_title = entry.get("title", "")
-            source_dict = entry.get("source", {})
-            source_title = source_dict.get("title") if isinstance(source_dict, dict) else None
-            clean_title, publisher = self._parse_publisher(raw_title, source_title)
+            raw_title = entry.get("title")
+            raw_title_str = str(raw_title) if raw_title is not None else ""
+            source_dict = entry.get("source")
+            source_title = None
+            if isinstance(source_dict, dict):
+                src_val = source_dict.get("title")
+                if src_val is not None:
+                    source_title = str(src_val)
+            clean_title, publisher = self._parse_publisher(raw_title_str, source_title)
             
-            raw_summary = entry.get("summary", "")
-            clean_summary = self._clean_html(raw_summary)
+            raw_summary = entry.get("summary")
+            raw_summary_str = str(raw_summary) if raw_summary is not None else ""
+            clean_summary = self._clean_html(raw_summary_str)
             if not clean_summary:
                 clean_summary = clean_title
 
-            link = entry.get("link", "")
-            published = entry.get("published", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"))
+            link = str(entry.get("link") or "")
+            published = str(entry.get("published") or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"))
 
             articles.append({
                 "title": clean_title,
@@ -226,12 +236,8 @@ class ResearchAgent:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         timeout_seconds = float(settings.DEFAULT_TIMEOUT_SECONDS)
 
-        articles: List[Dict[str, Any]] = []
-        try:
-            articles = await self.fetch_rss_feed(query=query, timeout=timeout_seconds)
-        except Exception:
-            # Fallback if external RSS feed is unreachable (e.g. offline or test environment)
-            articles = []
+        # Allow exceptions to propagate so Manager self-healing retry engine triggers
+        articles = await self.fetch_rss_feed(query=query, timeout=timeout_seconds)
 
         top_companies = self.rank_prominent_companies(articles, limit=limit)
         market_themes = self.extract_market_themes(articles)

@@ -73,8 +73,8 @@ class ManagerAgent:
         """Extract action, ticker, and quantity from a trade query."""
         resolved = self._resolve_entities_and_pronouns(message, session)
 
-        # Match patterns like: "Buy 10 shares of NVDA", "purchase 15 AAPL", "sell 5 shares of it"
-        pattern = r"\b(buy|purchase|sell)\s+(\d+(?:\.\d+)?)\s*(?:shares\s*(?:of)?)?\s*([a-zA-Z\$\.]+)"
+        # Match patterns like: "Buy 10 shares of NVDA", "purchase 15 AAPL", "sell 5 shares of it", "Buy 100 shares of 0700.HK"
+        pattern = r"\b(buy|purchase|sell)\s+(\d+(?:\.\d+)?)\s*(?:shares\s*(?:of)?)?\s*([a-zA-Z0-9\$\.\:\-]+)"
         match = re.search(pattern, resolved, flags=re.IGNORECASE)
         if match:
             raw_action = match.group(1).upper()
@@ -288,6 +288,29 @@ class ManagerAgent:
             ticker = trade_params["ticker"]
             quantity = trade_params["quantity"]
             session.last_ticker = ticker
+
+            # Guardrail: Check eligibility for trade targets (reject private and non-US / OTC equities)
+            rejection = analysis_agent._check_eligibility(ticker)
+            if rejection:
+                await self._emit_step(
+                    progress_callback, steps, "manager",
+                    f"[Manager] Trade eligibility check rejected target '{ticker}': {rejection}"
+                )
+                shares_owned = investment_agent.get_shares_owned(ticker)
+                response_text = (
+                    f"### Trade Validation Failed\n\n"
+                    f"Cannot execute order for **{action} {quantity} shares of {ticker}**.\n\n"
+                    f"**Reason:** {rejection}\n\n"
+                    f"**Current Cash Balance:** `${investment_agent.get_cash_balance():,.2f}`\n"
+                    f"**Shares Owned:** `{shares_owned:.1f}`"
+                )
+                session.add_message("assistant", response_text)
+                return {
+                    "session_id": session.session_id,
+                    "response": response_text,
+                    "steps": steps,
+                    "agent_data": {"status": "rejected", "reason": rejection},
+                }
 
             await self._emit_step(
                 progress_callback, steps, "manager",

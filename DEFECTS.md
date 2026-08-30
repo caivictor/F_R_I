@@ -1,5 +1,84 @@
 # DEFECTS
 
+## DEF-009: Private and Non-US Equities Bypass Guardrails in Direct Trade Parameter Extraction and Paper Execution
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-009)
+- Phase: 2
+
+Steps to reproduce:
+1. Start the application backend and open a chat session.
+2. Submit direct trade order commands for known private companies or foreign assets (e.g. "Buy 10 shares of SpaceX", "Buy 5 shares of Stripe", "Buy 100 shares of 0700.HK").
+3. Reply "yes" to confirm the trade order.
+
+Expected: Trade intent pre-validation should enforce the same US-public equity guardrails as the Analysis Agent, rejecting private companies and foreign/OTC securities before issuing trade estimates or executing paper trades.
+Actual: The trade workflow in `manager.py` does not invoke `_check_eligibility` on trade ticker targets. `InvestmentAgent.get_quote` defaults unknown and private tickers to `$100.00`, allowing users to confirm and execute paper purchases of private companies (SpaceX, Stripe, etc.) into their active portfolio.
+Screenshot: screenshots/adv-009-private-stock-spacex-trade-execution.png
+
+History:
+- qa: opened
+- orchestrator: set FIX-READY (backend-dev: Integrated _check_eligibility pre-validation into ManagerAgent trade handling and expanded regex matching to reject private companies and foreign/OTC listings)
+- qa: closed (retested and verified pre-validation rejection for private companies and non-US listings prior to confirmation in test_def_009_trade_eligibility_guardrail_rejects_private_and_non_us)
+
+## DEF-008: Unhandled TypeError in RSS News Feed Parser on Malformed Entries with Null Metadata
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-008)
+- Phase: 2
+
+Steps to reproduce:
+1. Start the application backend and initiate market research news collection.
+2. Ingest an RSS feed payload containing entries where title or summary is None or contains unexpected null dictionary values (e.g. `{"title": None, "link": "..."}`).
+
+Expected: The RSS parser should gracefully sanitize all fields, defaulting missing or null titles and summaries to safe fallback strings without raising unhandled runtime exceptions.
+Actual: In `backend/app/agents/research.py`, `fetch_rss_feed` calls `entry.get("title", "")` which returns `None` when `'title': None` is present in the feed dictionary. Passing `raw_title = None` to `_parse_publisher` causes `if " - " in title:` to raise `TypeError: argument of type 'NoneType' is not iterable`, crashing the feed ingestion pipeline.
+
+History:
+- qa: opened
+- orchestrator: set FIX-READY (backend-dev: Hardened _parse_publisher, _clean_html, and fetch_rss_feed against None and non-string metadata values)
+- qa: closed (retested and verified safe fallback handling for null title, summary, and publisher metadata without TypeError in test_def_008_rss_parser_handles_null_title_and_summary)
+
+## DEF-007: Fallback Exception Swallowing in Analysis and Research Sub-Agents Bypasses Manager 3x Retry Self-Healing and Generates Phantom Dossiers for Non-Existent Tickers
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-007)
+- Phase: 2
+
+Steps to reproduce:
+1. Start the application backend and initiate a chat session.
+2. Request analysis for a non-existent or invalid stock ticker (e.g. "Analyze FAKE_XYZ_TICKER_123") or simulate external API network failures/timeouts against yfinance and Google News RSS.
+
+Expected: When sub-agents encounter errors, timeouts, or invalid assets, the error should propagate to the Manager Agent's self-healing engine (`_execute_subagent_with_healing`) to trigger up to 3 dynamic query retries and adaptations before failing gracefully. Non-existent tickers should be reported as invalid.
+Actual: `analyze_company` wraps metric extraction in a broad `except Exception:` block and synthesizes a fake successful dossier (`current_price: $100.00`, `market_cap: 100.0B`, `roic: 22.5%`, `status: "success"`) for non-existent and delisted tickers. Similarly, `gather_market_news` catches exceptions and returns mock fallback articles with `status: "success"`. Because sub-agents return `status: "success"` on attempt 1 despite network failures or invalid data, the Manager 3x retry self-healing loop is completely bypassed and never executes retries or adaptations.
+
+History:
+- qa: opened
+- orchestrator: set FIX-READY (backend-dev: Removed synthetic fallback exception swallowing; invalid tickers and missing quotes raise ValueError and trigger Manager 3x retry healing)
+- qa: closed (retested and verified sub-agent error propagation, invalid ticker handling, and 3x Manager retry healing execution in test_def_007_subagents_propagate_errors_for_manager_self_healing)
+
+## DEF-006: Substring and Inverted Inclusion Checks in Private Company Guardrail Invalidate Legitimate US Public Equities
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-006)
+- Phase: 2
+
+Steps to reproduce:
+1. Start the application backend and initiate a chat session.
+2. Send a query requesting fundamental analysis for US public companies whose ticker symbols or names are substrings of known private companies (e.g., "Analyze DIS fundamentals and moat" for The Walt Disney Company, "Analyze V", "Analyze CAN", "Analyze RE", or "Analyze OPEN").
+
+Expected: The Analysis Agent should evaluate eligible US public equities listed on NYSE/NASDAQ while only rejecting actual private companies.
+Actual: In `backend/app/agents/analysis.py`, `_check_eligibility` tests `if priv_key in cleaned or cleaned in priv_key:`. The inverted check `cleaned in priv_key` checks whether the user's input ticker is a substring of any private company name. Consequently, $DIS is rejected claiming "Discord is a private company", $V and $CAN are rejected claiming "Canva is a private company", $RE is rejected claiming "Revolut is a private company", and $OPEN is rejected claiming "OpenAI is a private company".
+Screenshot: screenshots/adv-006-public-stock-disney-rejected-as-discord.png
+
+History:
+- qa: opened
+- orchestrator: set FIX-READY (backend-dev: Replaced substring/containment checks with regex word boundary matching, ensuring valid US public tickers like DIS, V, CAN, RE, OPEN pass eligibility)
+- qa: closed (retested and verified word-boundary eligibility check allows valid public tickers DIS, V, CAN, RE, OPEN while rejecting private companies in test_def_006_private_company_word_boundary_and_valid_tickers)
+
 ## DEF-005: Unhandled Regex PatternError in Pronoun Entity Resolution When Ticker Contains Regex Special Characters
 
 - Status: CLOSED

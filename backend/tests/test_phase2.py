@@ -1,6 +1,7 @@
 """Unit and integration tests for Phase 2: Research, Analysis, and Manager Self-Healing Engine."""
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -98,14 +99,23 @@ def test_research_agent_ranking_batch_cap():
 
 
 @pytest.mark.asyncio
-async def test_research_agent_offline_fallback():
-    """Verify Research Agent returns structured briefing even when network/RSS fails."""
+async def test_research_agent_empty_feed_fallback():
+    """Verify Research Agent returns structured briefing with fallback leaders when feed has no articles."""
     agent = ResearchAgent()
-    with patch.object(agent, "fetch_rss_feed", side_effect=Exception("Network unreachable")):
+    with patch.object(agent, "fetch_rss_feed", return_value=[]):
         result = await agent.gather_market_news()
         assert result["status"] == "success"
         assert len(result["top_companies"]) >= 3
         assert "Market Intelligence Briefing" in result["summary_markdown"]
+
+
+@pytest.mark.asyncio
+async def test_research_agent_exception_propagates_for_self_healing():
+    """Verify Research Agent raises exception on network failure so Manager self-healing can retry."""
+    agent = ResearchAgent()
+    with patch.object(agent, "fetch_rss_feed", side_effect=ConnectionError("Network unreachable")):
+        with pytest.raises(ConnectionError):
+            await agent.gather_market_news()
 
 
 # ---------------------------------------------------------------------------

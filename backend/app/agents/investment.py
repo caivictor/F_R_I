@@ -78,6 +78,11 @@ class InvestmentAgent:
         """Get the current cash reserve balance."""
         return self._cash_balance
 
+    def get_shares_owned(self, ticker: str) -> float:
+        """Get current shares owned for a ticker."""
+        cleaned = ticker.strip().upper()
+        return float(self._positions.get(cleaned, {}).get("shares", 0.0))
+
     def get_quote(self, ticker: str) -> float:
         """Get the latest market price or fallback for a ticker."""
         cleaned = ticker.strip().upper()

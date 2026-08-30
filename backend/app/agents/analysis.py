@@ -92,9 +92,10 @@ class AnalysisAgent:
         """Check if target company meets US-public equity criteria."""
         cleaned = ticker_or_name.strip().lower()
 
-        # 1. Check for known private companies
+        # 1. Check for known private companies using exact/word-boundary matching
+        cleaned_text = re.sub(r"[\$]", " ", cleaned)
         for priv_key, priv_name in KNOWN_PRIVATE_COMPANIES.items():
-            if priv_key in cleaned or cleaned in priv_key:
+            if re.search(rf"\b{re.escape(priv_key)}\b", cleaned_text, flags=re.IGNORECASE):
                 return (
                     f"**Analysis Rejection**: {priv_name} is a private company. "
                     "F.R.I. Analysis Agent strictly evaluates US-listed public equities (NYSE/NASDAQ) "
@@ -106,11 +107,18 @@ class AnalysisAgent:
             ".pk", ".ob", ":otc", "otc", ".to", ".l", ".hk", ".ss", ".sz",
             ".de", ".pa", ".as", ".ax", ".si", ".ks", ".t", ".sw"
         ]
-        if any(ind in cleaned for ind in non_us_indicators):
-            return (
-                f"**Analysis Rejection**: '{ticker_or_name}' appears to be a non-US or OTC listing. "
-                "F.R.I. Analysis Agent strictly restricts analysis to US-listed equities on major exchanges (NYSE/NASDAQ)."
-            )
+        for ind in non_us_indicators:
+            if ind == "otc":
+                if re.search(r"\botc\b", cleaned, flags=re.IGNORECASE):
+                    return (
+                        f"**Analysis Rejection**: '{ticker_or_name}' appears to be a non-US or OTC listing. "
+                        "F.R.I. Analysis Agent strictly restricts analysis to US-listed equities on major exchanges (NYSE/NASDAQ)."
+                    )
+            elif ind in cleaned:
+                return (
+                    f"**Analysis Rejection**: '{ticker_or_name}' appears to be a non-US or OTC listing. "
+                    "F.R.I. Analysis Agent strictly restricts analysis to US-listed equities on major exchanges (NYSE/NASDAQ)."
+                )
 
         return None
 
@@ -152,32 +160,46 @@ class AnalysisAgent:
         # Fallback to fast_info if info is sparse
         fast_info = getattr(ticker_obj, "fast_info", None)
 
+        def _safe_fast_info_get(attr: str) -> Any:
+            if not fast_info:
+                return None
+            try:
+                return getattr(fast_info, attr, None)
+            except Exception:
+                return None
+
         # Guardrail: Check exchange and currency
-        currency = info.get("currency") or (getattr(fast_info, "currency", "USD") if fast_info else "USD")
+        currency = info.get("currency") or _safe_fast_info_get("currency") or "USD"
         quote_type = info.get("quoteType", "EQUITY")
-        if currency and currency.upper() != "USD":
+        if currency and str(currency).upper() != "USD":
             raise ValueError(f"Ticker '{ticker}' is denominated in {currency}, not USD. Only US equities supported.")
 
         # Pricing data with Off-Hours support (Previous Close)
         regular_price = info.get("currentPrice") or info.get("regularMarketPrice")
-        if regular_price is None and fast_info:
-            regular_price = getattr(fast_info, "last_price", None)
+        if regular_price is None:
+            regular_price = _safe_fast_info_get("last_price")
 
         previous_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
-        if previous_close is None and fast_info:
-            previous_close = getattr(fast_info, "previous_close", None)
+        if previous_close is None:
+            previous_close = _safe_fast_info_get("previous_close")
+
+        market_cap_raw = info.get("marketCap") or _safe_fast_info_get("market_cap")
+        short_name = info.get("shortName") or info.get("longName")
+
+        # Non-existent or invalid ticker check: if no price, no market cap, and no name, raise error
+        if regular_price is None and previous_close is None and market_cap_raw is None and short_name is None:
+            raise ValueError(f"No financial or market data found for ticker '{ticker}'. Ticker may be invalid, non-existent, or delisted.")
 
         # Off-hours fallback
         current_price = regular_price if regular_price is not None else previous_close
         if current_price is None:
-            current_price = 100.0
+            current_price = previous_close
         if previous_close is None:
             previous_close = current_price
 
-        name = info.get("shortName") or info.get("longName") or f"{ticker} Inc."
+        name = short_name or f"{ticker} Inc."
         sector = info.get("sector", "Technology / Equities")
         industry = info.get("industry", "Public Equities")
-        market_cap_raw = info.get("marketCap") or (getattr(fast_info, "market_cap", None) if fast_info else None)
         market_cap = _format_currency(market_cap_raw)
 
         # 1. Profitability & Capital Efficiency
@@ -353,38 +375,8 @@ class AnalysisAgent:
         ticker = self._resolve_ticker(ticker_or_name)
         timeout_seconds = float(settings.DEFAULT_TIMEOUT_SECONDS)
 
-        try:
-            metrics_data = await self.fetch_financial_metrics(ticker, timeout=timeout_seconds)
-        except Exception:
-            # Fallback data model if yfinance network call fails or times out
-            metrics_data = {
-                "ticker": ticker,
-                "name": f"{ticker} Inc.",
-                "sector": "US Equities",
-                "industry": "Public Corporate",
-                "current_price": 100.00,
-                "previous_close": 99.50,
-                "market_cap": "100.0B",
-                "roic": "22.5%",
-                "roe": "28.0%",
-                "gross_margin": "52.0%",
-                "operating_margin": "24.0%",
-                "fcf": "$5.0B",
-                "fcf_yield": "5.0%",
-                "debt_to_equity": "0.65x",
-                "current_ratio": "1.50x",
-                "quick_ratio": "1.20x",
-                "rev_cagr_3yr": "10.0%",
-                "trailing_pe": "24.0x",
-                "forward_pe": "20.0x",
-                "peg_ratio": "1.80x",
-                "p_fcf": "20.0x",
-                "ev_ebitda": "14.5x",
-                "dividend_yield": "1.2%",
-                "moat": f"Established customer base, solid competitive positioning, and operational execution for {ticker}.",
-                "bull_case": f"Long-term secular market tailwinds and disciplined capital allocation driving shareholder returns for {ticker}.",
-                "bear_case": f"Broader macroeconomic cyclicality, inflation, and competitive market dynamics affecting {ticker}.",
-            }
+        # Fetch financial metrics allowing exceptions to propagate to Manager's self-healing engine
+        metrics_data = await self.fetch_financial_metrics(ticker, timeout=timeout_seconds)
 
         # Optional Gemini enhancement for qualitative moat & risks
         if settings.GEMINI_API_KEY:
@@ -396,9 +388,12 @@ class AnalysisAgent:
                 f"FCF: {metrics_data['fcf']}, FCF Yield: {metrics_data['fcf_yield']}, PE: {metrics_data['trailing_pe']}.\n"
                 f"Provide concise qualitative assessment in 3 bullet points: 1) Economic Moat, 2) Core Investment Thesis, 3) Key Bear Risk."
             )
-            llm_text = await generate_text(prompt=prompt, system_instruction=self.get_persona())
-            if llm_text:
-                metrics_data["moat"] = llm_text
+            try:
+                llm_text = await generate_text(prompt=prompt, system_instruction=self.get_persona())
+                if llm_text:
+                    metrics_data["moat"] = llm_text
+            except Exception:
+                pass
 
         dossier_markdown = self._build_dossier_markdown(metrics_data)
 

@@ -57,3 +57,50 @@ Expected: Entity resolution in `_resolve_entities_and_pronouns` should safely ha
 Actual: `re.sub(pattern, ticker, resolved, flags=re.IGNORECASE)` treats backslashes in `ticker` as group reference escapes. When an invalid group escape (like `\99`) is passed, python's `re.sub` raises `re.PatternError: invalid group reference`, causing an unhandled server error.
 
 Disposition: ACCEPTED -> DEF-005
+
+## ADV-006: Substring and Inverted Inclusion Checks in Private Company Guardrail Invalidate Legitimate US Public Equities
+
+- Session: phase-2 gate
+- Suggested severity: HIGH
+
+What I did: Requested fundamental analysis for standard US-listed public companies whose ticker symbols or names are substrings of known private companies (e.g., "Analyze DIS fundamentals and moat" for The Walt Disney Company, "Analyze V" for Visa Inc., "Analyze CAN" for Canaan Inc., "Analyze RE" for Everest Group, or "Analyze OPEN" for Opendoor Technologies).
+Expected: The Analysis Agent should evaluate eligible US public equities listed on NYSE/NASDAQ while only rejecting actual private companies.
+Actual: In `backend/app/agents/analysis.py`, `_check_eligibility` tests `if priv_key in cleaned or cleaned in priv_key:`. The inverted check `cleaned in priv_key` checks whether the user's input ticker is a substring of any private company name. Consequently, $DIS is rejected claiming "Discord is a private company", $V and $CAN are rejected claiming "Canva is a private company", $RE is rejected claiming "Revolut is a private company", and $OPEN is rejected claiming "OpenAI is a private company".
+Screenshot: screenshots/adv-006-public-stock-disney-rejected-as-discord.png
+
+Disposition: ACCEPTED -> DEF-006
+
+## ADV-007: Fallback Exception Swallowing in Analysis and Research Sub-Agents Bypasses Manager 3x Retry Self-Healing and Generates Phantom Dossiers for Non-Existent Tickers
+
+- Session: phase-2 gate
+- Suggested severity: HIGH
+
+What I did: Tested the system with non-existent or invalid stock tickers (e.g. "Analyze FAKE_XYZ_TICKER_123") and simulated network timeouts / external API connection failures against yfinance and Google News RSS feeds.
+Expected: When sub-agents fail or encounter network timeouts/invalid assets, errors should propagate to the Manager Agent's self-healing engine (`_execute_subagent_with_healing`) to execute up to 3 dynamic query retries and rephrasings, ultimately presenting a graceful failure report if recovery fails. Non-existent tickers should be reported as invalid.
+Actual: `analyze_company` wraps metric extraction in a broad `except Exception:` block and synthesizes a fake successful dossier (`current_price: $100.00`, `market_cap: 100.0B`, `roic: 22.5%`, `status: "success"`) for non-existent and delisted tickers. Similarly, `gather_market_news` catches exceptions and returns mock fallback articles with `status: "success"`. Because sub-agents return `status: "success"` on attempt 1 despite network failures or invalid data, the Manager 3x retry self-healing loop is completely bypassed and never executes retries or adaptations.
+
+Disposition: ACCEPTED -> DEF-007
+
+## ADV-008: Unhandled TypeError in RSS News Feed Parser on Malformed Entries with Null Metadata
+
+- Session: phase-2 gate
+- Suggested severity: MEDIUM
+
+What I did: Ingested RSS feed payloads containing entries where title or summary is None or structured with unexpected null dictionary values (e.g. `{"title": None, "link": "..."}`).
+Expected: The RSS parser should gracefully sanitize all fields, defaulting missing or null titles and summaries to safe fallback strings without raising unhandled runtime exceptions.
+Actual: In `backend/app/agents/research.py`, `fetch_rss_feed` calls `entry.get("title", "")` which returns `None` when `'title': None` is present in the feed dictionary. Passing `raw_title = None` to `_parse_publisher` causes `if " - " in title:` to raise `TypeError: argument of type 'NoneType' is not iterable`, crashing the feed ingestion pipeline.
+
+Disposition: ACCEPTED -> DEF-008
+
+## ADV-009: Private and Non-US Equities Bypass Guardrails in Direct Trade Parameter Extraction and Paper Execution
+
+- Session: phase-2 gate
+- Suggested severity: HIGH
+
+What I did: Submitted direct trade order commands for known private companies and foreign assets (e.g. "Buy 10 shares of SpaceX", "Buy 5 shares of Stripe", "Buy 100 shares of 0700.HK"), followed by confirming the trade ("yes").
+Expected: Trade intent pre-validation should enforce the same US-public equity guardrails as the Analysis Agent, rejecting private companies and foreign/OTC securities before issuing trade estimates or executing paper trades.
+Actual: The trade workflow in `manager.py` does not invoke `_check_eligibility` on trade ticker targets. `InvestmentAgent.get_quote` defaults unknown and private tickers to `$100.00`, allowing users to confirm and execute paper purchases of private companies (SpaceX, Stripe, etc.) into their active portfolio.
+Screenshot: screenshots/adv-009-private-stock-spacex-trade-execution.png
+
+Disposition: ACCEPTED -> DEF-009
+

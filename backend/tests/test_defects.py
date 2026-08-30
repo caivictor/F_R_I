@@ -1,10 +1,13 @@
-"""Unit tests verifying fixes for DEF-001 through DEF-005."""
+"""Unit tests verifying fixes for DEF-001 through DEF-009."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient, ASGITransport
-from backend.app.main import app
+from backend.app.agents.analysis import AnalysisAgent, analysis_agent
 from backend.app.agents.investment import InvestmentAgent
 from backend.app.agents.manager import ManagerAgent, SessionState
+from backend.app.agents.research import ResearchAgent, research_agent
+from backend.app.main import app
 
 
 @pytest.mark.asyncio
@@ -185,3 +188,174 @@ def test_def_005_pronoun_resolution_regex_special_characters():
     session.last_ticker = r"NVDA"
     resolved_trade = mgr._resolve_entities_and_pronouns("Buy 10 shares of it", session)
     assert "NVDA" in resolved_trade
+
+
+def test_def_006_private_company_word_boundary_and_valid_tickers():
+    """DEF-006: Word-boundary matching allows public tickers DIS, V, CAN, RE, OPEN while rejecting private companies."""
+    agent = AnalysisAgent()
+
+    # Legitimate public tickers that previously collided with substrings of private companies
+    valid_tickers = ["DIS", "V", "CAN", "RE", "OPEN", "Disney", "The Walt Disney Company"]
+    for ticker in valid_tickers:
+        rejection = agent._check_eligibility(ticker)
+        assert rejection is None, f"Expected {ticker} to be eligible, but got rejection: {rejection}"
+
+    # Verify query phrases containing these tickers
+    for query in [
+        "Analyze DIS fundamentals and moat",
+        "Analyze V",
+        "Analyze CAN",
+        "Analyze RE",
+        "Analyze OPEN",
+    ]:
+        rejection = agent._check_eligibility(query)
+        assert rejection is None, f"Expected query '{query}' to be eligible, but got rejection: {rejection}"
+
+    # Verify actual private companies are strictly rejected
+    private_companies = [
+        "OpenAI", "SpaceX", "Stripe", "ByteDance", "Anthropic",
+        "Databricks", "Canva", "Epic Games", "Discord", "Revolut",
+        "Plaid", "Valve", "Shein", "$SPACEX", "analyze openai"
+    ]
+    for priv in private_companies:
+        rejection = agent._check_eligibility(priv)
+        assert rejection is not None, f"Expected {priv} to be rejected as private company"
+        assert "private company" in rejection
+
+
+@pytest.mark.asyncio
+async def test_def_007_subagents_propagate_errors_for_manager_self_healing():
+    """DEF-007: Sub-agents do not swallow errors into fake success data, triggering Manager 3x retry self-healing."""
+    # 1. AnalysisAgent raises ValueError for non-existent ticker
+    with pytest.raises(ValueError):
+        analysis_agent._extract_yfinance_metrics_sync("FAKE_NONEXISTENT_TICKER_999")
+
+    # 2. ResearchAgent raises on fetch failure
+    with patch.object(research_agent, "fetch_rss_feed", side_effect=ConnectionError("RSS connection failed")):
+        with pytest.raises(ConnectionError):
+            await research_agent.gather_market_news("market news")
+
+    # 3. Manager self-healing catches analysis failure and attempts 3 retries
+    manager = ManagerAgent()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Patch fetch_financial_metrics to simulate 3 failing attempts
+        with patch.object(analysis_agent, "fetch_financial_metrics", side_effect=ValueError("No financial data found")):
+            res = await client.post("/api/chat", json={"message": "Analyze FAKE_TICKER_XYZ"})
+            assert res.status_code == 200
+            data = res.json()
+            assert "Analysis Agent Execution Failure" in data["response"]
+            assert "after 3 automated attempts" in data["response"]
+            assert "No financial data found" in data["response"]
+            # Verify steps recorded retries
+            retry_steps = [s for s in data["steps"] if "Retrying" in s.get("message", "")]
+            assert len(retry_steps) >= 2
+
+
+@pytest.mark.asyncio
+async def test_def_008_rss_parser_handles_null_title_and_summary():
+    """DEF-008: RSS parser gracefully handles None or missing title and summary without TypeError."""
+    agent = ResearchAgent()
+
+    # Unit check for _parse_publisher with None
+    title, pub = agent._parse_publisher(None, None)
+    assert title == "Untitled Article"
+    assert pub == "Google News"
+
+    title2, pub2 = agent._parse_publisher(None, "Custom Publisher")
+    assert title2 == "Untitled Article"
+    assert pub2 == "Custom Publisher"
+
+    # Unit check for _clean_html with None
+    clean_html = agent._clean_html(None)
+    assert clean_html == ""
+
+    # Integration test with mocked feedparser returning null fields
+    mock_feed = MagicMock()
+    mock_feed.entries = [
+        {
+            "title": None,
+            "summary": None,
+            "source": {"title": None},
+            "link": "https://news.google.com/rss/articles/123",
+            "published": None,
+        },
+        {
+            "title": "Fed Holds Benchmark Rates - Reuters",
+            "summary": "<p>Federal reserve announcement summary.</p>",
+            "source": None,
+            "link": "https://news.google.com/rss/articles/456",
+            "published": "2026-08-29 12:00:00 UTC",
+        }
+    ]
+
+    with patch("backend.app.agents.research.httpx.AsyncClient.get") as mock_get, \
+         patch("backend.app.agents.research.feedparser.parse", return_value=mock_feed):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.text = "<rss></rss>"
+        mock_get.return_value = mock_response
+
+        articles = await agent.fetch_rss_feed()
+        assert len(articles) == 2
+        assert articles[0]["title"] == "Untitled Article"
+        assert articles[0]["publisher"] == "Google News"
+        assert articles[0]["summary"] == "Untitled Article"
+        assert articles[1]["title"] == "Fed Holds Benchmark Rates"
+        assert articles[1]["publisher"] == "Reuters"
+
+
+@pytest.mark.asyncio
+async def test_def_009_trade_eligibility_guardrail_rejects_private_and_non_us():
+    """DEF-009: Manager rejects private and non-US stocks before trade confirmation estimate."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Private company trade attempt
+        res_spacex = await client.post(
+            "/api/chat",
+            json={"message": "Buy 10 shares of SpaceX"},
+        )
+        assert res_spacex.status_code == 200
+        data_spacex = res_spacex.json()
+        assert "Trade Validation Failed" in data_spacex["response"]
+        assert "SpaceX is a private company" in data_spacex["response"]
+        assert "Trade Order Confirmation Required" not in data_spacex["response"]
+
+        # Private company trade attempt with Stripe
+        res_stripe = await client.post(
+            "/api/chat",
+            json={"message": "Buy 5 shares of Stripe"},
+        )
+        assert res_stripe.status_code == 200
+        data_stripe = res_stripe.json()
+        assert "Trade Validation Failed" in data_stripe["response"]
+        assert "Stripe is a private company" in data_stripe["response"]
+        assert "Trade Order Confirmation Required" not in data_stripe["response"]
+
+        # Non-US equity trade attempt
+        res_foreign = await client.post(
+            "/api/chat",
+            json={"message": "Buy 100 shares of 0700.HK"},
+        )
+        assert res_foreign.status_code == 200
+        data_foreign = res_foreign.json()
+        assert "Trade Validation Failed" in data_foreign["response"]
+        assert "non-US or OTC listing" in data_foreign["response"]
+        assert "Trade Order Confirmation Required" not in data_foreign["response"]
+
+        # Confirming after a rejected trade should not execute any trade
+        session_id = data_spacex["session_id"]
+        res_confirm = await client.post(
+            "/api/chat",
+            json={"message": "yes proceed", "session_id": session_id},
+        )
+        assert res_confirm.status_code == 200
+        assert "Trade Confirmation & Execution" not in res_confirm.json()["response"]
+
+        # Valid US equity trade should proceed to confirmation
+        res_valid = await client.post(
+            "/api/chat",
+            json={"message": "Buy 5 shares of AAPL", "session_id": session_id},
+        )
+        assert res_valid.status_code == 200
+        assert "Trade Order Confirmation Required" in res_valid.json()["response"]
