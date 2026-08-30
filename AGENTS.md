@@ -53,10 +53,22 @@ cd e2e && npx playwright test phase3.spec.ts && cd ..
   - Build output goes to `frontend/dist/`. FastAPI serves this directory directly in production.
 - `e2e/`: Playwright test suite.
 - `screenshots/`: Evidence screenshots captured during QA and adversarial passes.
+- `.agent/` / `.opencode/agents/`: Sub-agent persona definitions (`orchestrator`, `backend-dev`, `frontend-dev`, `qa`, `adversary`, `security`).
 
 ---
 
-## 3. Critical Technical Constraints & Guardrails
+## 3. Sub-Agent Roles & Responsibilities
+
+- **`orchestrator`**: Delivery lead. Plans phases, delegates coding specs to developers, reviews evidence/diffs/screenshots, triages adversary and security findings.
+- **`backend-dev`**: Backend implementation. FastAPI, agent logic, SQLite persistence, and backend unit tests.
+- **`frontend-dev`**: Frontend implementation. React components, Vite build, Tailwind styling, and Vitest unit tests.
+- **`qa`**: Quality assurance. E2E browser tests (Playwright), full test runs, screenshot inspection, and owns `DEFECTS.md`.
+- **`adversary`**: Adversarial reviewer. Unscripted hostile testing to uncover edge cases and breaks; logs findings to `ADVERSARIAL_REVIEW.md`.
+- **`security`**: Security reviewer and auditor. Static analysis, dependency audits, OWASP Top 10 compliance, authentication/input validation, and security posture auditing; logs findings to `SECURITY.md`.
+
+---
+
+## 4. Critical Technical Constraints & Guardrails
 
 - **Zero Heavy Infrastructure**: The application MUST run inside a standard Python 3.10+ virtual environment with local SQLite (`data/fri_portfolio.db`). Never introduce Docker, PostgreSQL, Redis, or external DB daemons.
 - **Single Process**: Do NOT run separate frontend dev servers in production. The FastAPI backend must directly serve `frontend/dist` static assets.
@@ -74,9 +86,12 @@ cd e2e && npx playwright test phase3.spec.ts && cd ..
 
 ---
 
-## 4. Defect & Adversarial Ledgers
+## 5. Defect, Adversarial & Security Ledgers
 
 - **`DEFECTS.md`**: Defect lifecycle is strictly controlled:
   - Status flow: `OPEN` -> `FIX-READY` -> `CLOSED`.
   - Only `qa` opens and closes defects. Developers report fixes to orchestrator; orchestrator sets `FIX-READY`.
 - **`ADVERSARIAL_REVIEW.md`**: Adversary records anomalies with `Disposition: PENDING`. Orchestrator resolves to `ACCEPTED -> DEF-NNN` or `REJECTED - reason`.
+- **`SECURITY.md`**: Security vulnerability ledger:
+  - Security posture, vulnerability assessments, and dependency/endpoint audit findings are tracked in `SECURITY.md`.
+  - Only the `security` agent logs and updates security entries in `SECURITY.md`. Developers remediate vulnerabilities and report fixes for orchestrator triage and security re-verification.
