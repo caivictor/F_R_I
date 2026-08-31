@@ -163,6 +163,24 @@ class Database:
                     FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE
                 )
             """)
+
+            # 8. LLM Debug & Context Logs table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS llm_debug_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    agent TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    system_instruction TEXT,
+                    prompt TEXT NOT NULL,
+                    context_data TEXT,
+                    response TEXT,
+                    latency_ms REAL DEFAULT 0.0,
+                    status TEXT NOT NULL
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_llm_debug_session ON llm_debug_logs(session_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id)")
 
             # 7. Conversation Memory table (long-context entity state & compression)
@@ -746,6 +764,55 @@ class Database:
                 except Exception:
                     pass
             return res
+
+
+    def save_llm_debug_log(
+        self,
+        session_id: str,
+        agent: str,
+        prompt: str,
+        model: str = "gemini-2.5-flash",
+        system_instruction: Optional[str] = None,
+        context_data: Optional[Dict[str, Any]] = None,
+        response: Optional[str] = None,
+        latency_ms: float = 0.0,
+        status: str = "success",
+    ) -> int:
+        """Save a record of context and prompt passed to an LLM or sub-agent for debugging."""
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        ctx_json = json.dumps(context_data) if context_data is not None else None
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO llm_debug_logs (
+                    session_id, timestamp, agent, model, system_instruction, prompt, context_data, response, latency_ms, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                session_id, now_str, agent, model, system_instruction, prompt, ctx_json, response, latency_ms, status
+            ))
+            return cursor.lastrowid or 0
+
+    def get_session_debug_logs(self, session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Retrieve all LLM context and prompt debug logs for a specific session."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM llm_debug_logs
+                WHERE session_id = ?
+                ORDER BY id ASC
+                LIMIT ?
+            """, (session_id, limit))
+            rows = cursor.fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                if item.get("context_data"):
+                    try:
+                        item["context_data"] = json.loads(item["context_data"])
+                    except Exception:
+                        pass
+                result.append(item)
+            return result
 
 
 db = Database()

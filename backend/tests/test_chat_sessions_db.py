@@ -87,3 +87,28 @@ async def test_session_state_restoration_across_restarts():
 
     # Clean up
     db.delete_session(session_id)
+
+
+@pytest.mark.asyncio
+async def test_session_debug_logs_endpoint():
+    """Verify GET /api/chat/sessions/{session_id}/debug returns captured LLM prompts and context."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # Chat interaction
+        res = await client.post(
+            "/api/chat",
+            json={"message": "Hello, how can you help me today?"},
+        )
+        assert res.status_code == 200
+        session_id = res.json()["session_id"]
+
+        # Fetch debug logs
+        debug_res = await client.get(f"/api/chat/sessions/{session_id}/debug")
+        assert debug_res.status_code == 200
+        data = debug_res.json()
+        assert data["session_id"] == session_id
+        assert "debug_logs" in data
+        assert len(data["debug_logs"]) >= 1
+        log = data["debug_logs"][0]
+        assert "prompt" in log
+        assert "context_data" in log
+        assert log["agent"] == "manager"

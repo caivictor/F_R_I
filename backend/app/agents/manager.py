@@ -11,6 +11,8 @@ from backend.app.agents.investment import investment_agent
 from backend.app.agents.personas import persona_manager
 from backend.app.agents.research import research_agent
 from backend.app.config import settings
+from backend.app.db.database import db
+from backend.app.agents.llm import generate_text
 
 ProgressCallback = Callable[[Dict[str, Any]], Coroutine[Any, Any, None]]
 
@@ -1007,27 +1009,90 @@ class ManagerAgent:
                 "agent_data": research_res,
             }
 
-        # 8. General Assistant Overview / Greeting Fallback
+        # 8. Intelligent Conversational Context Reasoning & Manager Response
         await self._emit_step(
-            progress_callback, steps, "manager", "[Manager] Processing general inquiry..."
+            progress_callback, steps, "manager", "[Manager] Analyzing inquiry against conversation context and portfolio state..."
         )
-        greeting = (
-            "### Welcome to F.R.I. (Financial Research & Investment)\n\n"
-            "I am your **Manager Agent**, orchestrating financial research, fundamental equity analysis, and paper-trading portfolio execution.\n\n"
-            "**How I can assist you:**\n"
-            "1. **Market Research:** *\"What are today's top business news and market themes?\"*\n"
-            "2. **Fundamental Analysis:** *\"Analyze Apple\"* or *\"Evaluate NVDA fundamentals and moat\"*\n"
-            "3. **Portfolio Management:** *\"Show my portfolio balance and positions\"*\n"
-            "4. **Trade Execution:** *\"Buy 10 shares of NVDA\"* (includes strict 2-step confirmation)\n"
-            "5. **End-to-End Discovery:** *\"Find top tech stories and analyze promising stocks\"*\n\n"
-            "How would you like to proceed today?"
+
+        cash_avail = investment_agent.get_cash_balance()
+        holdings = db.get_positions()
+        holdings_summary = ", ".join([f"{p['ticker']} ({p['shares']} sh)" for p in holdings]) if holdings else "None (100% Cash)"
+
+        context_data = {
+            "session_id": session.session_id,
+            "user_query": user_message,
+            "active_focus_ticker": session.last_ticker,
+            "discovered_candidates": session.last_discovered_tickers,
+            "portfolio_cash": f"${cash_avail:,.2f}",
+            "portfolio_positions": holdings_summary,
+            "context_summary": session.get_full_context_summary(),
+            "recent_turns_count": len(session.messages),
+        }
+
+        context_prompt = (
+            f"User Inquiry: {user_message}\n\n"
+            f"Active Session Context:\n"
+            f"- Active Ticker Focus: {session.last_ticker or 'None'}\n"
+            f"- Last Discovered Candidates: {', '.join(session.last_discovered_tickers) if session.last_discovered_tickers else 'None'}\n"
+            f"- Current Portfolio Cash: ${cash_avail:,.2f}\n"
+            f"- Current Holdings: {holdings_summary}\n"
+            f"- Conversation Summary: {session.get_full_context_summary() or 'New Session'}\n\n"
+            "Respond naturally, intelligently, and contextually as the F.R.I. Manager Agent. "
+            "Address the user's specific request or question directly while offering actionable next steps."
         )
-        session.add_message("assistant", greeting)
+
+        from backend.app.agents.llm import generate_text
+        llm_response = await generate_text(
+            prompt=context_prompt,
+            system_instruction=self.get_persona(),
+            session_id=session.session_id,
+            agent="manager",
+            context_data=context_data,
+        )
+
+        if llm_response and len(llm_response.strip()) > 10:
+            final_response = llm_response.strip()
+        else:
+            active_context_parts = []
+            if session.last_ticker:
+                active_context_parts.append(f"our recent focus on **${session.last_ticker}**")
+            if session.last_discovered_tickers:
+                active_context_parts.append(f"the discovered candidates ({', '.join(['$' + t for t in session.last_discovered_tickers])})")
+
+            context_clause = f" Regarding {active_context_parts[0]}," if active_context_parts else ""
+
+            if any(w in cleaned for w in ["start", "begin", "today", "ready", "hello", "hi", "hey"]):
+                candidates_block = f"- **Active Watchlist Candidates:** {', '.join(['`$' + t + '`' for t in session.last_discovered_tickers])}\n\n" if session.last_discovered_tickers else "\n"
+                final_response = (
+                    "### Ready for Financial Research & Investment\n\n"
+                    f"Hello! I am your **Manager Agent**, maintaining our continuous session memory.{context_clause}\n\n"
+                    f"- **Portfolio Status:** `${cash_avail:,.2f}` Cash | Holdings: `{holdings_summary}`\n"
+                    + candidates_block
+                    + "**Suggested Next Steps:**\n"
+                    "1. **Discover Market News:** *\"Scan today's business headlines for trending companies\"*\n"
+                    "2. **Evaluate Fundamentals:** *\"Analyze Apple (AAPL)\"* or *\"Evaluate NVDA fundamentals\"*\n"
+                    "3. **Paper Portfolio:** *\"Show my portfolio NAV and holdings\"*\n"
+                    "4. **Execute Trade:** *\"Buy 10 shares of NVDA\"*\n\n"
+                    "What would you like to explore?"
+                )
+            else:
+                final_response = (
+                    f"### Manager Assistant\n\n"
+                    f"### Manager Assistant\n\nI have noted your inquiry: *\"{user_message.strip()}\"*.{context_clause}\n\n"
+                    f"- **Current Portfolio Cash:** `${cash_avail:,.2f}`\n"
+                    f"- **Active Positions:** `{holdings_summary}`\n\n"
+                    "You can ask me to perform market discovery, conduct in-depth equity dossiers, or execute trade orders with 2-step confirmation."
+                )
+
+        session.add_message("assistant", final_response)
         return {
             "session_id": session.session_id,
-            "response": greeting,
+            "response": final_response,
             "steps": steps,
-            "agent_data": {"type": "general_greeting"},
+            "agent_data": {
+                "type": "conversational_response",
+                "context_debug": context_data,
+            },
         }
 
 

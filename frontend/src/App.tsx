@@ -4,17 +4,23 @@ import { ChatInterface } from "./components/ChatInterface";
 import { PersonaModal } from "./components/PersonaModal";
 import { SessionsModal } from "./components/SessionsModal";
 import { SecurityModal } from "./components/SecurityModal";
+import { DebugModal } from "./components/DebugModal";
 import type { ChatMessage, HealthStatus, AgentStep, ChatSessionSummary, SecurityAuditReport } from "./types";
 import { fetchHealth, streamChat, sendChatFallback, fetchSessions, fetchSessionDetails, deleteSession, fetchSecurityAudit } from "./services/api";
 
+const ACTIVE_SESSION_STORAGE_KEY = "fri_active_session_id";
+
 export const App: React.FC = () => {
-  const [sessionId, setSessionId] = useState<string>(() => `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+  const [sessionId, setSessionId] = useState<string>(() => {
+    return localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY) || `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isPersonasOpen, setIsPersonasOpen] = useState<boolean>(false);
   const [isSessionsOpen, setIsSessionsOpen] = useState<boolean>(false);
   const [isSecurityOpen, setIsSecurityOpen] = useState<boolean>(false);
+  const [isDebugOpen, setIsDebugOpen] = useState<boolean>(false);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [isHealthLoading, setIsHealthLoading] = useState<boolean>(true);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
@@ -23,6 +29,13 @@ export const App: React.FC = () => {
   const [isSecurityLoading, setIsSecurityLoading] = useState<boolean>(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Sync active session ID to localStorage
+  useEffect(() => {
+    if (sessionId) {
+      localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, sessionId);
+    }
+  }, [sessionId]);
 
   const checkHealth = useCallback(async () => {
     try {
@@ -60,9 +73,32 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  // Restore existing session messages on mount if available
   useEffect(() => {
     checkHealth();
     loadSessionsList();
+
+    const restoreInitialSession = async () => {
+      const savedId = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+      if (savedId) {
+        try {
+          const details = await fetchSessionDetails(savedId);
+          if (details && details.messages && details.messages.length > 0) {
+            const formatted: ChatMessage[] = details.messages.map((m, idx) => ({
+              id: `msg_${idx}_${Date.now()}`,
+              role: m.role,
+              content: m.content,
+              timestamp: m.timestamp,
+            }));
+            setMessages(formatted);
+          }
+        } catch {
+          // New session fallback
+        }
+      }
+    };
+
+    restoreInitialSession();
     const interval = setInterval(checkHealth, 30000);
     return () => clearInterval(interval);
   }, [checkHealth, loadSessionsList]);
@@ -74,6 +110,7 @@ export const App: React.FC = () => {
     }
     const newId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     setSessionId(newId);
+    localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, newId);
     setMessages([]);
     setInput("");
     setIsLoading(false);
@@ -88,6 +125,7 @@ export const App: React.FC = () => {
     try {
       const details = await fetchSessionDetails(targetSessionId);
       setSessionId(details.session_id);
+      localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, details.session_id);
       const formattedMessages: ChatMessage[] = (details.messages || []).map((m, idx) => ({
         id: `msg_${idx}_${Date.now()}`,
         role: m.role,
@@ -194,6 +232,7 @@ export const App: React.FC = () => {
           },
           onDone: (data) => {
             setSessionId(data.session_id);
+            localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, data.session_id);
             setMessages((prev) =>
               prev.map((msg) => {
                 if (msg.id === assistantMsgId) {
@@ -214,6 +253,7 @@ export const App: React.FC = () => {
               try {
                 const fallbackData = await sendChatFallback(promptToSend, sessionId);
                 setSessionId(fallbackData.session_id);
+                localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, fallbackData.session_id);
                 setMessages((prev) =>
                   prev.map((msg) => {
                     if (msg.id === assistantMsgId) {
@@ -288,6 +328,7 @@ export const App: React.FC = () => {
           loadSecurityAudit();
           setIsSecurityOpen(true);
         }}
+        onOpenDebug={() => setIsDebugOpen(true)}
       />
 
       {/* Main Chat Interface */}
@@ -328,6 +369,13 @@ export const App: React.FC = () => {
         isLoading={isSecurityLoading}
         onClose={() => setIsSecurityOpen(false)}
         onRefresh={loadSecurityAudit}
+      />
+
+      {/* LLM Context & Debug Inspector Modal */}
+      <DebugModal
+        isOpen={isDebugOpen}
+        sessionId={sessionId}
+        onClose={() => setIsDebugOpen(false)}
       />
     </div>
   );

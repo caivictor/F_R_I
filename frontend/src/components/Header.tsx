@@ -1,5 +1,5 @@
 import React from "react";
-import { Activity, Bot, PlusCircle, Server, Clock, ShieldCheck } from "lucide-react";
+import { Activity, Bot, PlusCircle, Server, Clock, ShieldCheck, Terminal } from "lucide-react";
 import type { HealthStatus } from "../types";
 
 interface HeaderProps {
@@ -9,6 +9,7 @@ interface HeaderProps {
   onOpenPersonas: () => void;
   onOpenSessions: () => void;
   onOpenSecurity: () => void;
+  onOpenDebug: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,6 +19,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPersonas,
   onOpenSessions,
   onOpenSecurity,
+  onOpenDebug,
 }) => {
   const isHealthy = health?.status === "ok";
 
@@ -47,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           {/* Health Status Indicator */}
           <div
             className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-xs text-slate-300 shadow-inner"
@@ -84,6 +86,16 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden md:inline">History</span>
           </button>
 
+          {/* Debug / LLM Context Inspector Button */}
+          <button
+            onClick={onOpenDebug}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition-all shadow-sm active:scale-95 cursor-pointer"
+            title="Inspect LLM Context & Prompts"
+          >
+            <Terminal className="w-3.5 h-3.5 text-purple-400" />
+            <span className="hidden md:inline">Debug</span>
+          </button>
+
           {/* Security Posture Audit Button */}
           <button
             onClick={onOpenSecurity}
@@ -100,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition-all shadow-sm active:scale-95 cursor-pointer"
             title="Configure Agent Personas"
           >
-            <Bot className="w-3.5 h-3.5 text-purple-400" />
+            <Bot className="w-3.5 h-3.5 text-amber-400" />
             <span className="hidden md:inline">Personas</span>
           </button>
 

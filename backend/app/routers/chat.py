@@ -178,3 +178,19 @@ async def delete_all_chat_sessions() -> Dict[str, Any]:
     """Delete all chat sessions and clear session memory."""
     manager_agent.delete_all_sessions()
     return {"status": "all_sessions_cleared"}
+
+
+@router.get("/sessions/{session_id}/debug")
+async def get_session_debug_logs(session_id: str, limit: int = Query(default=100, ge=1, le=500)) -> Dict[str, Any]:
+    """Retrieve captured LLM prompts, system instructions, context payloads, and latencies for debugging."""
+    sess = db.get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail=f'Session "{session_id}" not found.')
+    logs = db.get_session_debug_logs(session_id, limit=limit)
+    return {
+        "session_id": session_id,
+        "session_title": sess.get("title"),
+        "total_logs": len(logs),
+        "debug_logs": logs,
+        "active_memory": sess.get("memory"),
+    }

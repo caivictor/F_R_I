@@ -12,6 +12,7 @@ describe("Header Component", () => {
         onOpenPersonas={vi.fn()}
         onOpenSessions={vi.fn()}
         onOpenSecurity={vi.fn()}
+        onOpenDebug={vi.fn()}
       />
     );
 
@@ -30,6 +31,7 @@ describe("Header Component", () => {
         onOpenPersonas={vi.fn()}
         onOpenSessions={vi.fn()}
         onOpenSecurity={vi.fn()}
+        onOpenDebug={vi.fn()}
       />
     );
 
@@ -45,38 +47,42 @@ describe("Header Component", () => {
         onOpenPersonas={vi.fn()}
         onOpenSessions={vi.fn()}
         onOpenSecurity={vi.fn()}
+        onOpenDebug={vi.fn()}
       />
     );
 
     expect(screen.getByText("Offline")).toBeInTheDocument();
   });
 
-  it("triggers onNewSession, onOpenPersonas, onOpenSessions, onOpenSecurity when clicked", () => {
-    const handleNewSession最佳 = vi.fn();
+  it("triggers onNewSession, onOpenPersonas, onOpenSessions, onOpenSecurity, onOpenDebug when clicked", () => {
+    const handleNewSession = vi.fn();
     const handleOpenPersonas = vi.fn();
     const handleOpenSessions = vi.fn();
     const handleOpenSecurity = vi.fn();
+    const handleOpenDebug = vi.fn();
 
     render(
       <Header
         health={{ status: "ok", app: "F.R.I.", version: "1.1.0" }}
         isHealthLoading={false}
-        onNewSession={handleNewSession最佳}
+        onNewSession={handleNewSession}
         onOpenPersonas={handleOpenPersonas}
         onOpenSessions={handleOpenSessions}
         onOpenSecurity={handleOpenSecurity}
+        onOpenDebug={handleOpenDebug}
       />
     );
 
     const newSessionBtn = screen.getByRole("button", { name: /New Chat/i });
-    const personasBtn逗 = screen.getByRole("button", { name: /Personas/i });
+    const personasBtn = screen.getByRole("button", { name: /Personas/i });
     const historyBtn = screen.getByRole("button", { name: /History/i });
     const securityBtn = screen.getByRole("button", { name: /Security/i });
+    const debugBtn = screen.getByRole("button", { name: /Debug/i });
 
     fireEvent.click(newSessionBtn);
-    expect(handleNewSession最佳).toHaveBeenCalledTimes(1);
+    expect(handleNewSession).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(personasBtn逗);
+    fireEvent.click(personasBtn);
     expect(handleOpenPersonas).toHaveBeenCalledTimes(1);
 
     fireEvent.click(historyBtn);
@@ -84,5 +90,8 @@ describe("Header Component", () => {
 
     fireEvent.click(securityBtn);
     expect(handleOpenSecurity).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(debugBtn);
+    expect(handleOpenDebug).toHaveBeenCalledTimes(1);
   });
 });
