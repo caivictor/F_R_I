@@ -1,5 +1,33 @@
 # DEFECTS
 
+## DEF-016: Debug Modal Empty Context Logs and Session Deletion Failure in History Switcher
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: user
+- Phase: 4
+
+Steps to reproduce:
+1. Start the application and initiate queries (e.g. discovery, market research, or equity analysis).
+2. Click the "Debug" button in the header.
+3. Observe that the Debug modal reports "No LLM interactions logged yet" because non-LLM sub-agent turns (pipeline, research, analysis) did not record structured debug log entries, and the debug endpoint returned HTTP 404 on uninitialized sessions.
+4. Click the "History" button in the header and attempt to delete a session by clicking the trash icon.
+5. Observe that session deletion failed due to strict rowcount constraints and unhandled debug log foreign keys.
+
+Expected:
+1. Every user turn and sub-agent execution must record a structured debug log entry in SQLite (`llm_debug_logs`) containing the prompt, system instruction, injected context data JSON, model/agent, latency, and response.
+2. The debug endpoint `GET /api/chat/sessions/{session_id}/debug` must return session details, message transcript, active context memory, and captured logs without throwing HTTP 404 on fresh sessions.
+3. The Debug Modal must display both LLM context logs and the full conversation transcript with tabbed navigation and session selection.
+4. The delete button in `SessionsModal` must reliably delete the session and associated messages/logs from SQLite and update the UI immediately.
+
+Actual:
+Debug modal showed empty logs, and session deletion failed.
+
+History:
+- qa: opened
+- orchestrator: set FIX-READY (backend-dev: Added turn-level debug logging for all turns, tabbed conversation & context inspector in DebugModal, safe debug endpoint fallback, and clean SQLite session deletion across all related tables)
+- qa: closed (retested and verified turn debug logging, context payload capture, conversation history inspector, and session deletion in test_def_016_debug_logging_on_every_turn_and_reliable_session_deletion and e2e/phase4_sessions_security.spec.ts)
+
 ## DEF-015: Conversational Context Loss and False Ticker Extraction on Quantifiers ("all", "all five") During Multi-Agent Discovery
 
 - Status: CLOSED

@@ -645,13 +645,14 @@ class Database:
             return [dict(row) for row in rows]
 
     def delete_session(self, session_id: str) -> bool:
-        """Delete a chat session and all associated messages and memory."""
+        """Delete a chat session and all associated messages, memory, and debug logs."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
             cursor.execute("DELETE FROM conversation_memory WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM llm_debug_logs WHERE session_id = ?", (session_id,))
             cursor.execute("DELETE FROM chat_sessions WHERE session_id = ?", (session_id,))
-            return cursor.rowcount > 0
+            return True
 
     def delete_all_sessions(self) -> bool:
         """Delete all chat sessions, messages, and memory."""

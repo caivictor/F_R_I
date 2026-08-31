@@ -375,7 +375,9 @@ export const App: React.FC = () => {
       <DebugModal
         isOpen={isDebugOpen}
         sessionId={sessionId}
+        sessions={sessions}
         onClose={() => setIsDebugOpen(false)}
+        onSelectSession={handleSelectSession}
       />
     </div>
   );

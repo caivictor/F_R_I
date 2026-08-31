@@ -4,6 +4,17 @@ All notable changes to this project are documented below.
 
 ---
 
+## [1.1.1] - 2026-08-30
+
+### Turn-Level Debug Logging, Context Inspector & Session Deletion Fixes
+- **DEF-016 Debug & History Fix**: Added turn-level automatic debug logging in `llm_debug_logs` across all discovery, analysis, trade, and conversational turns.
+- **Tabbed Debug Modal Inspector**: Added tabbed navigation in `DebugModal` (LLM Context & Prompts, Conversation Transcript, Active Memory State) with a session selector dropdown.
+- **Safe Debug Endpoint**: Handled fresh/uninitialized session IDs gracefully in `GET /api/chat/sessions/{session_id}/debug` without returning 404.
+- **Reliable Session Deletion**: Fixed session deletion in `SessionsModal` and `Database.delete_session` to cleanly remove associated messages, conversation memory, debug logs, and session records.
+- **Conversational Reasoning Loop**: Enhanced Manager Agent free-form conversation reasoning to construct full context prompts (including active tickers, candidates, and portfolio state) and respond naturally.
+
+---
+
 ## [1.1.0] - 2026-08-30
 
 ### Persistent Chat Continuity, Multi-Session History & Security Posture UI

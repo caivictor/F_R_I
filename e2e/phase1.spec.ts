@@ -11,7 +11,7 @@ test.describe('Phase 1 E2E Test Suite - F.R.I. App', () => {
     const body = await response.json();
     expect(body.status).toBe('ok');
     expect(body.app).toBe('F.R.I.');
-    expect(body.version).toBe('1.1.0');
+    expect(body.version).toBe('1.1.1');
   });
 
   test('Backend API Personas Endpoints', async ({ request }) => {

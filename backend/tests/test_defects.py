@@ -654,3 +654,59 @@ async def test_def_015_conversational_context_retention_and_quantifier_protectio
         assert "Allstate" not in data3["response"] or "Allstate Corporation" not in data3["response"]
 
 
+
+
+@pytest.mark.asyncio
+async def test_def_016_debug_logging_on_every_turn_and_reliable_session_deletion():
+    """DEF-016: Verify turn debug logging into llm_debug_logs, graceful debug endpoint on fresh sessions, and clean session deletion."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Fresh session debug endpoint must return 200 with empty structure, NOT 404
+        fresh_sess_id = "fresh_sess_def_016"
+        fresh_debug = await client.get(f"/api/chat/sessions/{fresh_sess_id}/debug")
+        assert fresh_debug.status_code == 200
+        fresh_data拼 = fresh_debug.json()
+        assert fresh_data拼["session_id"] == fresh_sess_id
+        assert fresh_data拼["total_logs"] == 0
+        assert fresh_data拼["messages"] == []
+
+        # 2. Process discovery turn and verify debug log is recorded with context
+        res_disc = await client.post(
+            "/api/chat",
+            json={"message": "Discover today's market news", "session_id": fresh_sess_id},
+        )
+        assert res_disc.status_code == 200
+
+        # Verify debug log was captured in database
+        debug_after = await client.get(f"/api/chat/sessions/{fresh_sess_id}/debug")
+        assert debug_after.status_code == 200
+        debug_data = debug_after.json()
+        assert debug_data["total_logs"] >= 1
+        last_log = debug_data["debug_logs"][-1]
+        assert last_log["session_id"] == fresh_sess_id
+        assert last_log["agent"] == "manager"
+        assert "prompt" in last_log
+        assert "context_data" in last_log
+        assert len(debug_data["messages"]) >= 2
+
+        # 3. Process second turn (general conversational query) and verify second debug log entry
+        res_turn2 = await client.post(
+            "/api/chat",
+            json={"message": "What should we analyze next?", "session_id": fresh_sess_id},
+        )
+        assert res_turn2.status_code == 200
+
+        debug_turn2 = await client.get(f"/api/chat/sessions/{fresh_sess_id}/debug")
+        assert debug_turn2.status_code == 200
+        assert debug_turn2.json()["total_logs"] >= 2
+
+        # 4. Verify DELETE /api/chat/sessions/{session_id} reliably deletes everything and returns 200
+        del_res = await client.delete(f"/api/chat/sessions/{fresh_sess_id}")
+        assert del_res.status_code == 200
+        assert del_res.json()["status"] == "deleted"
+
+        # Verify database records are cleared
+        sess_after = db.get_session(fresh_sess_id)
+        assert sess_after is None
+        logs_after = db.get_session_debug_logs(fresh_sess_id)
+        assert len(logs_after) == 0

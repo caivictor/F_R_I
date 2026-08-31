@@ -182,15 +182,25 @@ async def delete_all_chat_sessions() -> Dict[str, Any]:
 
 @router.get("/sessions/{session_id}/debug")
 async def get_session_debug_logs(session_id: str, limit: int = Query(default=100, ge=1, le=500)) -> Dict[str, Any]:
-    """Retrieve captured LLM prompts, system instructions, context payloads, and latencies for debugging."""
+    """Retrieve captured LLM prompts, system instructions, context payloads, and conversation logs for debugging."""
     sess = db.get_session(session_id)
     if not sess:
-        raise HTTPException(status_code=404, detail=f'Session "{session_id}" not found.')
+        sess = {
+            "session_id": session_id,
+            "title": "Active Session",
+            "messages": [],
+            "memory": None,
+        }
     logs = db.get_session_debug_logs(session_id, limit=limit)
     return {
         "session_id": session_id,
-        "session_title": sess.get("title"),
+        "session_title": sess.get("title") or "Active Session",
         "total_logs": len(logs),
         "debug_logs": logs,
-        "active_memory": sess.get("memory"),
+        "messages": sess.get("messages", []),
+        "active_memory": sess.get("memory") or {
+            "last_ticker": None,
+            "last_discovered_tickers": [],
+            "summary": None,
+        },
     }

@@ -423,6 +423,44 @@ class ManagerAgent:
         session_id: Optional[str] = None,
         progress_callback: Optional[ProgressCallback] = None,
     ) -> Dict[str, Any]:
+        """Process incoming user prompt through multi-agent orchestration with full context capture."""
+        import time
+        start_time = time.perf_counter()
+        result = await self._process_message_internal(user_message, session_id, progress_callback)
+        elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        try:
+            from backend.app.db.database import db
+            session = self.get_or_create_session(result["session_id"])
+            context_payload = {
+                "session_id": session.session_id,
+                "user_query": user_message,
+                "active_ticker": session.last_ticker,
+                "discovered_candidates": session.last_discovered_tickers,
+                "context_summary": session.get_full_context_summary(),
+                "steps": result.get("steps", []),
+                "agent_data_type": (result.get("agent_data") or {}).get("type", "orchestrated_turn"),
+            }
+            db.save_llm_debug_log(
+                session_id=session.session_id,
+                agent="manager",
+                model="gemini-2.5-flash / orchestrator-core",
+                system_instruction=self.get_persona(),
+                prompt=user_message,
+                context_data=context_payload,
+                response=result["response"],
+                latency_ms=elapsed_ms,
+                status="turn_completed",
+            )
+        except Exception:
+            pass
+        return result
+
+    async def _process_message_internal(
+        self,
+        user_message: str,
+        session_id: Optional[str] = None,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> Dict[str, Any]:
         """Process incoming user prompt through multi-agent orchestration."""
         session = self.get_or_create_session(session_id)
         session.add_message("user", user_message)

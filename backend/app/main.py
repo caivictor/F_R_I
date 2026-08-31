@@ -15,7 +15,7 @@ from backend.app.routers.security import router as security_router
 app = FastAPI(
     title="F.R.I. Financial Research & Investment API",
     description="Multi-agent financial research, equity analysis, and portfolio paper trading assistant.",
-    version="1.1.0",
+    version="1.1.1",
 )
 
 # CORS middleware configuration
@@ -40,7 +40,7 @@ async def health_check() -> dict:
     return {
         "status": "ok",
         "app": "F.R.I.",
-        "version": "1.1.0",
+        "version": "1.1.1",
     }
 
 
