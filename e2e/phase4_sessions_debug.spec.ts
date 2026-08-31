@@ -1,13 +1,13 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Sessions Continuity, Debug Inspector & Security Audit E2E", () => {
-  test("Session History Modal Workflow & Deletion", async ({ page }) => {
+test.describe("Sessions Continuity & Debug Inspector E2E", () => {
+  test("Session History Modal Workflow, Debug Inspector & Deletion", async ({ page }) => {
     await page.goto("http://localhost:8000");
 
     // Check Header controls are present
     await expect(page.getByRole("button", { name: /History/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /Debug/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Security/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Personas/i })).toBeVisible();
 
     // Send a message to generate session history and debug logs
     const input = page.getByPlaceholder(/Ask research query/i);
@@ -39,10 +39,5 @@ test.describe("Sessions Continuity, Debug Inspector & Security Audit E2E", () =>
 
     // Close Debug Modal
     await page.keyboard.press("Escape");
-
-    // Open Security Modal
-    await page.getByRole("button", { name: /Security/i }).click();
-    await expect(page.getByText(/Security Agent Posture Audit/i)).toBeVisible();
-    await expect(page.getByText(/SEC-001/i)).toBeVisible();
   });
 });

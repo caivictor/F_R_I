@@ -1,5 +1,5 @@
 import React from "react";
-import { Activity, Bot, PlusCircle, Server, Clock, ShieldCheck, Terminal } from "lucide-react";
+import { Activity, Bot, PlusCircle, Server, Clock, Terminal } from "lucide-react";
 import type { HealthStatus } from "../types";
 
 interface HeaderProps {
@@ -8,7 +8,6 @@ interface HeaderProps {
   onNewSession: () => void;
   onOpenPersonas: () => void;
   onOpenSessions: () => void;
-  onOpenSecurity: () => void;
   onOpenDebug: () => void;
 }
 
@@ -18,7 +17,6 @@ export const Header: React.FC<HeaderProps> = ({
   onNewSession,
   onOpenPersonas,
   onOpenSessions,
-  onOpenSecurity,
   onOpenDebug,
 }) => {
   const isHealthy = health?.status === "ok";
@@ -70,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
                 {isHealthLoading
                   ? "Connecting..."
                   : isHealthy
-                  ? `v${health?.version || "1.1.1"}`
+                  ? `v${health?.version || "1.2.0"}`
                   : "Offline"}
               </span>
             </div>
@@ -96,16 +94,6 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden md:inline">Debug</span>
           </button>
 
-          {/* Security Posture Audit Button */}
-          <button
-            onClick={onOpenSecurity}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition-all shadow-sm active:scale-95 cursor-pointer"
-            title="Security Agent Audit & Guardrails"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden md:inline">Security</span>
-          </button>
-
           {/* Agent Personas Button */}
           <button
             onClick={onOpenPersonas}
@@ -119,7 +107,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* New Session Button */}
           <button
             onClick={onNewSession}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-medium shadow-md shadow-cyan-900/30 transition-all active:scale-95 cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-medium shadow-md shadow-cyan-900/30 transition-all active:scale-95 cursor-pointer"
             title="Start a new chat session"
           >
             <PlusCircle className="w-3.5 h-3.5" />

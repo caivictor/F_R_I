@@ -1,4 +1,4 @@
-export type AgentType = "manager" | "research" | "analysis" | "investment" | "security";
+export type AgentType = "manager" | "research" | "analysis" | "investment";
 
 export interface AgentStep {
   agent: string;
@@ -48,19 +48,4 @@ export interface ChatSessionDetail {
     timestamp: string;
   }[];
   memory?: Record<string, unknown>;
-}
-
-export interface SecurityAuditItem {
-  control: string;
-  status: "PASS" | "FAIL" | "WARN";
-  details: string;
-}
-
-export interface SecurityAuditReport {
-  timestamp: string;
-  overall_status: string;
-  security_score: number;
-  checks_passed: number;
-  checks_total: number;
-  audit_results: SecurityAuditItem[];
 }

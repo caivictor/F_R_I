@@ -10,12 +10,11 @@ from fastapi.responses import FileResponse
 from backend.app.routers.chat import router as chat_router
 from backend.app.routers.personas import router as personas_router
 from backend.app.routers.portfolio import router as portfolio_router
-from backend.app.routers.security import router as security_router
 
 app = FastAPI(
     title="F.R.I. Financial Research & Investment API",
     description="Multi-agent financial research, equity analysis, and portfolio paper trading assistant.",
-    version="1.1.1",
+    version="1.2.0",
 )
 
 # CORS middleware configuration
@@ -31,7 +30,6 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(personas_router)
 app.include_router(portfolio_router)
-app.include_router(security_router)
 
 
 @app.get("/api/health", tags=["health"])
@@ -40,7 +38,7 @@ async def health_check() -> dict:
     return {
         "status": "ok",
         "app": "F.R.I.",
-        "version": "1.1.1",
+        "version": "1.2.0",
     }
 
 
@@ -52,8 +50,13 @@ if FRONTEND_DIST.exists() and FRONTEND_DIST.is_dir():
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str) -> FileResponse:
-        """Serve frontend static build or fallback to index.html."""
-        file_path = FRONTEND_DIST / full_path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
+        """Serve frontend static build or fallback to index.html with path traversal protection."""
+        try:
+            resolved_dist = FRONTEND_DIST.resolve()
+            target_path = (resolved_dist / full_path).resolve()
+            # Enforce canonical path boundary containment to prevent path traversal
+            if str(target_path).startswith(str(resolved_dist)) and target_path.is_file():
+                return FileResponse(target_path)
+        except Exception:
+            pass
         return FileResponse(FRONTEND_DIST / "index.html")

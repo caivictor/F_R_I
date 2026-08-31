@@ -3,10 +3,9 @@ import { Header } from "./components/Header";
 import { ChatInterface } from "./components/ChatInterface";
 import { PersonaModal } from "./components/PersonaModal";
 import { SessionsModal } from "./components/SessionsModal";
-import { SecurityModal } from "./components/SecurityModal";
 import { DebugModal } from "./components/DebugModal";
-import type { ChatMessage, HealthStatus, AgentStep, ChatSessionSummary, SecurityAuditReport } from "./types";
-import { fetchHealth, streamChat, sendChatFallback, fetchSessions, fetchSessionDetails, deleteSession, fetchSecurityAudit } from "./services/api";
+import type { ChatMessage, HealthStatus, AgentStep, ChatSessionSummary } from "./types";
+import { fetchHealth, streamChat, sendChatFallback, fetchSessions, fetchSessionDetails, deleteSession } from "./services/api";
 
 const ACTIVE_SESSION_STORAGE_KEY = "fri_active_session_id";
 
@@ -19,14 +18,11 @@ export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isPersonasOpen, setIsPersonasOpen] = useState<boolean>(false);
   const [isSessionsOpen, setIsSessionsOpen] = useState<boolean>(false);
-  const [isSecurityOpen, setIsSecurityOpen] = useState<boolean>(false);
   const [isDebugOpen, setIsDebugOpen] = useState<boolean>(false);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [isHealthLoading, setIsHealthLoading] = useState<boolean>(true);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [isSessionsLoading, setIsSessionsLoading] = useState<boolean>(false);
-  const [securityReport, setSecurityReport] = useState<SecurityAuditReport | null>(null);
-  const [isSecurityLoading, setIsSecurityLoading] = useState<boolean>(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -61,17 +57,7 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  const loadSecurityAudit = useCallback(async () => {
-    try {
-      setIsSecurityLoading(true);
-      const rep = await fetchSecurityAudit();
-      setSecurityReport(rep);
-    } catch {
-      // Ignore
-    } finally {
-      setIsSecurityLoading(false);
-    }
-  }, []);
+
 
   // Restore existing session messages on mount if available
   useEffect(() => {
@@ -324,10 +310,7 @@ export const App: React.FC = () => {
           loadSessionsList();
           setIsSessionsOpen(true);
         }}
-        onOpenSecurity={() => {
-          loadSecurityAudit();
-          setIsSecurityOpen(true);
-        }}
+
         onOpenDebug={() => setIsDebugOpen(true)}
       />
 
@@ -362,14 +345,7 @@ export const App: React.FC = () => {
         onNewSession={handleNewSession}
       />
 
-      {/* Security Agent Posture Modal */}
-      <SecurityModal
-        isOpen={isSecurityOpen}
-        auditReport={securityReport}
-        isLoading={isSecurityLoading}
-        onClose={() => setIsSecurityOpen(false)}
-        onRefresh={loadSecurityAudit}
-      />
+
 
       {/* LLM Context & Debug Inspector Modal */}
       <DebugModal

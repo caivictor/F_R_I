@@ -710,3 +710,16 @@ async def test_def_016_debug_logging_on_every_turn_and_reliable_session_deletion
         assert sess_after is None
         logs_after = db.get_session_debug_logs(fresh_sess_id)
         assert len(logs_after) == 0
+
+
+@pytest.mark.asyncio
+async def test_sec_001_path_traversal_protection():
+    """SEC-001: Path traversal sequences in static file serving route are contained and do not leak system files."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Traversal payload attempting to read /etc/passwd or root files
+        res = await client.get("/../../etc/passwd")
+        assert res.status_code == 200
+        # Must return index.html fallback, NOT system files or passwd contents
+        assert "root:x:" not in res.text
+        assert "<!doctype html>" in res.text.lower() or "html" in res.text.lower()

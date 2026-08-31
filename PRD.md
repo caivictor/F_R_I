@@ -5,11 +5,10 @@ status: Ready
 # PRD: F.R.I. (Financial Research & Investment) AI Multi-Agent System
 
 ## 1. Product Vision & Overview
-F.R.I. is an intelligent AI Agent chat companion designed for comprehensive financial research, equity analysis, paper portfolio management, and security oversight. Users interact through a standard, clean AI chat interface with a **Manager Agent** (Main Agent companion) that autonomously spins up specialized sub-agents on-demand:
+F.R.I. is an intelligent AI Agent chat companion designed for comprehensive financial research, equity analysis, and paper portfolio management. Users interact through a standard, clean AI chat interface with a **Manager Agent** (Main Agent companion) that autonomously spins up specialized worker sub-agents on-demand:
 1. **Research Agent**: Scrapes and synthesizes live market and business news.
 2. **Analysis Agent**: Conducts fundamental and quantitative equity evaluations.
 3. **Investment Agent**: Manages paper trading portfolios, cash flows, and position tracking.
-4. **Security Agent**: Enforces input validation, safety checks, transaction guardrails, and security posture auditing.
 
 The system features robust long-context memory and persistent continuity across sessions backed by local SQLite storage, along with rolling multi-turn conversation context compression that preserves active entities, portfolio metrics, and prior research findings across turns and restarts.
 
@@ -20,8 +19,8 @@ The system features robust long-context memory and persistent continuity across 
   - **Core Responsibilities:**
     1. **Autonomous Sub-Agent Delegation & Task Progress Streaming:**
        - Dynamically spins up specialized sub-agents on-demand based on user intent and workflow needs.
-       - Streams live task progress badges and real-time step status to the user in the chat UI (e.g., `[Manager] Spinning up Research Agent...` -> `[Research Agent] Parsing top market themes...` -> `[Manager] Delegating AAPL to Analysis Agent...` -> `[Security Agent] Verifying transaction guardrails...`).
-       - Orchestrates single-agent queries, parallel sub-agent tasks, and sequential chains (e.g., *Market News -> Deep Equity Analysis -> Security Check -> Investment Recommendation*).
+       - Streams live task progress badges and real-time step status to the user in the chat UI (e.g., `[Manager] Spinning up Research Agent...` -> `[Research Agent] Parsing top market themes...` -> `[Manager] Delegating AAPL to Analysis Agent...`).
+       - Orchestrates single-agent queries, parallel sub-agent tasks, and sequential chains (e.g., *Market News -> Deep Equity Analysis -> Investment Recommendation*).
     2. **Long-Context Memory & Cross-Session Continuity:**
        - Persistently stores customer preferences, historical research threads, multi-company candidate sets, and past trade requests in SQLite.
        - Restores complete conversational memory and context across sessions and server restarts, enabling the user to seamlessly resume past threads.
@@ -38,7 +37,7 @@ The system features robust long-context memory and persistent continuity across 
        - Automatically retries failed sub-agent tasks up to 3 times with dynamic prompt adjustments and query rephrasing.
        - Gracefully reports root cause and options if a task fails after 3 retries.
     6. **Multi-Agent Synthesis & Executive Briefings:**
-       - Synthesizes findings from Research, Analysis, Investment, and Security sub-agents into clean, actionable executive summaries with Markdown tables and key takeaways.
+       - Synthesizes findings from Research, Analysis, and Investment sub-agents into clean, actionable executive summaries with Markdown tables and key takeaways.
 
 - **Research Agent (Financial Data & News Gatherer):**
   - **Role:** Live News Discovery & Market Trend Aggregator.
@@ -75,14 +74,6 @@ The system features robust long-context memory and persistent continuity across 
     4. Dividend and yield-on-cost tracking.
     5. Formats markdown portfolio summaries and performance reports.
 
-- **Security Agent (Security Auditor & Guardrail Verifier):**
-  - **Role:** Safety Sentinel, Input Sanitization, Prompt Injection Defense, & Portfolio Risk Guardrail.
-  - **Core Responsibilities:**
-    1. **Input Sanitization & Injection Defense:** Inspects user inputs and incoming web content for malicious prompt injection patterns, unauthorized system overrides, and payload anomalies.
-    2. **Transaction & Order Risk Guardrails:** Performs secondary sanity verification on trade orders (e.g., extreme order sizes, fat-finger detection, irrational allocations, invalid ticker formats).
-    3. **Data Protection & Secret Leak Prevention:** Prevents exposure of system internals, API keys, or private environment variables in agent responses.
-    4. **Security Posture Auditing:** Audits application endpoints, headers, dependencies, and SQLite database integrity, logging any findings to `SECURITY.md`.
-
 ## 3. Interface, Memory & User Experience
 
 - **Clean AI Chat Interface:**
@@ -102,7 +93,7 @@ The system features robust long-context memory and persistent continuity across 
   - One-click copy and export of complete research dossiers, market digests, and portfolio reports formatted in Obsidian-compatible Markdown with YAML frontmatter tags.
 
 - **Persona Management Panel:**
-  - Dedicated settings modal allowing inspection and customization of system prompts for the Manager, Research, Analysis, Investment, and Security agents.
+  - Dedicated settings modal allowing inspection and customization of system prompts for the Manager, Research, Analysis, and Investment agents.
   - Fail-safe "Reset to Default" button per agent to revert any modified persona to safe defaults.
 
 ## 4. Technical Stack & Environment Constraints
@@ -119,10 +110,11 @@ The system features robust long-context memory and persistent continuity across 
   - Schema tables:
     1. `chat_sessions` & `chat_messages`: Multi-session chat history and token logs.
     2. `conversation_memory`: Persistent context, active entity candidate sets, user preferences, and compressed summaries.
-    3. `positions`: Asset holdings, cost basis, shares, dividends.
-    4. `transactions`: Trade and cash flow audit history.
-    5. `portfolio_summary`: Real-time cash balance ($100k initial) and realized gains.
-    6. `agent_personas`: System prompt configurations and defaults.
+    3. `llm_debug_logs`: Turn-level context, prompts, system instructions, and execution latencies.
+    4. `positions`: Asset holdings, cost basis, shares, dividends.
+    5. `transactions`: Trade and cash flow audit history.
+    6. `portfolio_summary`: Real-time cash balance ($100k initial) and realized gains.
+    7. `agent_personas`: System prompt configurations and defaults.
 - **Network & Tool Timeouts:**
   - 15–20 seconds hard timeout per external request (`yfinance`, Google News RSS).
 
@@ -138,19 +130,18 @@ The system features robust long-context memory and persistent continuity across 
 - Implement Analysis Agent with `yfinance` fundamental metrics (ROIC, FCF, D/E, valuation multiples).
 - Implement dynamic 3x retry self-healing engine and private company guardrails.
 
-### Phase 3: Paper Portfolio, Cash Management & Security Guardrails
+### Phase 3: Paper Portfolio, Cash Management & Trade Confirmation
 - Implement Investment Agent with SQLite persistence ($100k cash default), BUY/SELL validation, and 2-step trade confirmation.
-- Implement Security Agent guardrails for prompt safety, input validation, and transaction sanity.
 - Implement context compression engine for rolling multi-turn continuity.
 
 ### Phase 4: UX Polish, Long-Context Continuity & Obsidian Export
 - Refine long-context memory retrieval across sessions and server restarts.
 - Polish Markdown rendering, live sub-agent status badges, and one-click Obsidian export.
-- Complete comprehensive end-to-end verification, adversarial review, and security audit.
+- Complete comprehensive end-to-end verification and adversarial review.
 
 ## 6. Documentation & Maintenance Mandates
 1. **`INSTALL.md`**: Multi-platform installation guide (Linux, macOS, Windows) and single-command launcher instructions.
 2. **`USER_MANUAL.md`**: Operational guide covering chat workflows, sub-agent capabilities, paper trading, and persona customization.
-3. **`SECURITY.md`**: Security vulnerability ledger, posture audit findings, and guardrail validations.
+3. **`SECURITY.md`**: Security vulnerability ledger, posture audit findings, and development guardrail validations.
 4. **`DEFECTS.md` & `ADVERSARIAL_REVIEW.md`**: QA and adversarial tracking ledgers.
 5. **`README.md` & `CHANGELOG.md`**: High-level system architecture, repository structure, and version history.

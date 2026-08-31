@@ -1,4 +1,4 @@
-import type { AgentStep, HealthStatus, PersonasResponse, ChatSessionSummary, ChatSessionDetail, SecurityAuditReport } from "../types";
+import type { AgentStep, HealthStatus, PersonasResponse, ChatSessionSummary, ChatSessionDetail } from "../types";
 
 const API_BASE = "";
 
@@ -70,13 +70,7 @@ export async function deleteSession(sessionId: string): Promise<Record<string, u
   return res.json();
 }
 
-export async function fetchSecurityAudit(): Promise<SecurityAuditReport> {
-  const res = await fetch(`${API_BASE}/api/security/audit`);
-  if (!res.ok) {
-    throw new Error(`Security audit failed: ${res.status}`);
-  }
-  return res.json();
-}
+
 
 export interface StreamChatCallbacks {
   onStep?: (step: AgentStep) => void;

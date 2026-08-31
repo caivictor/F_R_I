@@ -4,6 +4,16 @@ All notable changes to this project are documented below.
 
 ---
 
+## [1.2.0] - 2026-08-30
+
+### Product Scope Realignment & Development Security Audit
+- **Product Scope Refinement**: Streamlined the user-facing application to focus on the 3 core product sub-agents: **Research Agent**, **Analysis Agent**, and **Investment Agent** (coordinated by the Manager Agent). Removed the end-user security modal from the product UI.
+- **Engineering Security Agent Role**: Configured the Security Agent as a dedicated development reviewer (alongside QA and Adversary) in `.agent/` and `.opencode/agents/` to perform ongoing security auditing across backend, frontend, dependencies, and database layers.
+- **SEC-001 Path Traversal Mitigation**: Discovered and remediated a path traversal vulnerability in static file serving (`backend/app/main.py`) with canonical boundary containment validation (`test_sec_001_path_traversal_protection`).
+- **All Ledgers Synchronized**: `DEFECTS.md` (0 open), `ADVERSARIAL_REVIEW.md` (0 pending), `SECURITY.md` (0 open).
+
+---
+
 ## [1.1.1] - 2026-08-30
 
 ### Turn-Level Debug Logging, Context Inspector & Session Deletion Fixes
