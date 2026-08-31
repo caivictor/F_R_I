@@ -1,4 +1,4 @@
-export type AgentType = 'manager' | 'research' | 'analysis' | 'investment';
+export type AgentType = "manager" | "research" | "analysis" | "investment" | "security";
 
 export interface AgentStep {
   agent: string;
@@ -8,7 +8,7 @@ export interface AgentStep {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   timestamp: string;
   steps?: AgentStep[];
@@ -25,4 +25,42 @@ export interface HealthStatus {
   status: string;
   app: string;
   version: string;
+}
+
+export interface ChatSessionSummary {
+  session_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  last_ticker?: string;
+  summary?: string;
+}
+
+export interface ChatSessionDetail {
+  session_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  messages: {
+    role: "user" | "assistant";
+    content: string;
+    timestamp: string;
+  }[];
+  memory?: Record<string, unknown>;
+}
+
+export interface SecurityAuditItem {
+  control: string;
+  status: "PASS" | "FAIL" | "WARN";
+  details: string;
+}
+
+export interface SecurityAuditReport {
+  timestamp: string;
+  overall_status: string;
+  security_score: number;
+  checks_passed: number;
+  checks_total: number;
+  audit_results: SecurityAuditItem[];
 }

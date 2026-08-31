@@ -30,13 +30,27 @@ class SessionState:
 
     def add_message(self, role: str, content: str) -> None:
         """Append a message to history and compress context when threshold exceeded."""
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         self.messages.append({
             "role": role,
             "content": content,
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "timestamp": timestamp,
         })
         if len(self.messages) > 12:
             self.compress_context()
+        try:
+            from backend.app.db.database import db
+            db.save_chat_message(self.session_id, role, content, timestamp)
+            db.save_conversation_memory(
+                session_id=self.session_id,
+                last_ticker=self.last_ticker,
+                last_discovered_companies=self.last_discovered_companies,
+                last_discovered_tickers=self.last_discovered_tickers,
+                pending_trade=self.pending_trade,
+                summary=self.summary,
+            )
+        except Exception:
+            pass
 
     def compress_context(self) -> None:
         """Compress older conversational history into an executive summary to preserve memory within token budgets."""
@@ -92,12 +106,46 @@ class ManagerAgent:
         return persona_manager.get_persona("manager")
 
     def get_or_create_session(self, session_id: Optional[str] = None) -> SessionState:
-        """Retrieve existing session state or initialize a new one."""
+        """Retrieve existing session state or initialize a new one with persistence restoration."""
         if not session_id or session_id.strip() == "":
             session_id = str(uuid.uuid4())
         if session_id not in self._sessions:
-            self._sessions[session_id] = SessionState(session_id=session_id)
+            sess = SessionState(session_id=session_id)
+            try:
+                from backend.app.db.database import db
+                mem = db.get_conversation_memory(session_id)
+                if mem:
+                    sess.last_ticker = mem.get("last_ticker")
+                    sess.last_discovered_companies = mem.get("last_discovered_companies") or []
+                    sess.last_discovered_tickers = mem.get("last_discovered_tickers") or []
+                    sess.pending_trade = mem.get("pending_trade")
+                    sess.summary = mem.get("summary")
+                msgs = db.get_chat_messages(session_id)
+                if msgs:
+                    sess.messages = msgs
+            except Exception:
+                pass
+            self._sessions[session_id] = sess
         return self._sessions[session_id]
+
+    def delete_session(self, session_id: str) -> bool:
+        """Delete session from memory and database."""
+        if session_id in self._sessions:
+            del self._sessions[session_id]
+        try:
+            from backend.app.db.database import db
+            return db.delete_session(session_id)
+        except Exception:
+            return False
+
+    def delete_all_sessions(self) -> bool:
+        """Clear all sessions from memory and database."""
+        self._sessions.clear()
+        try:
+            from backend.app.db.database import db
+            return db.delete_all_sessions()
+        except Exception:
+            return False
 
     def _resolve_entities_and_pronouns(self, message: str, session: SessionState) -> str:
         """Resolve pronouns like 'it', 'its', 'this company' using session memory."""

@@ -3,11 +3,12 @@
 import json
 import asyncio
 from typing import Any, AsyncGenerator, Dict, List, Optional
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from backend.app.agents.manager import manager_agent
+from backend.app.db.database import db
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -26,6 +27,37 @@ class ChatResponse(BaseModel):
     session_id: str
     steps: List[Dict[str, Any]]
     agent_data: Optional[Dict[str, Any]] = None
+
+
+class ChatMessageItem(BaseModel):
+    """Chat message history item."""
+
+    role: str
+    content: str
+    timestamp: str
+
+
+class SessionSummaryItem(BaseModel):
+    """Session summary overview item."""
+
+    session_id: str
+    title: str
+    created_at: str
+    updated_at: str
+    message_count: int = 0
+    last_ticker: Optional[str] = None
+    summary: Optional[str] = None
+
+
+class SessionDetailResponse(BaseModel):
+    """Detailed chat session response including full message history and memory."""
+
+    session_id: str
+    title: str
+    created_at: str
+    updated_at: str
+    messages: List[ChatMessageItem]
+    memory: Optional[Dict[str, Any]] = None
 
 
 @router.post("", response_model=ChatResponse)
@@ -102,3 +134,47 @@ async def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# --- Session Listing and Conversation Continuity Endpoints ---
+
+
+@router.get("/sessions", response_model=List[SessionSummaryItem])
+async def list_chat_sessions(limit: int = Query(default=50, ge=1, le=200)) -> List[SessionSummaryItem]:
+    """Retrieve all persisted chat sessions with metadata and entity summaries."""
+    sessions = db.list_sessions(limit=limit)
+    return [SessionSummaryItem(**s) for s in sessions]
+
+
+@router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
+async def get_chat_session_details(session_id: str) -> SessionDetailResponse:
+    """Retrieve a specific chat session with full message history and conversation memory."""
+    sess = db.get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail=f"Chat session '{session_id}' not found.")
+    return SessionDetailResponse(**sess)
+
+
+@router.get("/sessions/{session_id}/memory")
+async def get_chat_session_memory(session_id: str) -> Dict[str, Any]:
+    """Retrieve the stored entity memory, active ticker, and compression summary for a session."""
+    mem = db.get_conversation_memory(session_id)
+    if not mem:
+        return {"session_id": session_id, "memory": None}
+    return {"session_id": session_id, "memory": mem}
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_chat_session(session_id: str) -> Dict[str, Any]:
+    """Delete a chat session and all associated messages and memory."""
+    success = manager_agent.delete_session(session_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found or could not be deleted.")
+    return {"status": "deleted", "session_id": session_id}
+
+
+@router.delete("/sessions")
+async def delete_all_chat_sessions() -> Dict[str, Any]:
+    """Delete all chat sessions and clear session memory."""
+    manager_agent.delete_all_sessions()
+    return {"status": "all_sessions_cleared"}

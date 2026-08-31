@@ -10,11 +10,12 @@ from fastapi.responses import FileResponse
 from backend.app.routers.chat import router as chat_router
 from backend.app.routers.personas import router as personas_router
 from backend.app.routers.portfolio import router as portfolio_router
+from backend.app.routers.security import router as security_router
 
 app = FastAPI(
     title="F.R.I. Financial Research & Investment API",
     description="Multi-agent financial research, equity analysis, and portfolio paper trading assistant.",
-    version="1.0.1",
+    version="1.1.0",
 )
 
 # CORS middleware configuration
@@ -30,6 +31,7 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(personas_router)
 app.include_router(portfolio_router)
+app.include_router(security_router)
 
 
 @app.get("/api/health", tags=["health"])
@@ -38,7 +40,7 @@ async def health_check() -> dict:
     return {
         "status": "ok",
         "app": "F.R.I.",
-        "version": "1.0.1",
+        "version": "1.1.0",
     }
 
 

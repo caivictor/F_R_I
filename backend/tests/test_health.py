@@ -15,4 +15,4 @@ async def test_health_check():
         data = response.json()
         assert data["status"] == "ok"
         assert data["app"] == "F.R.I."
-        assert data["version"] == "1.0.1"
+        assert data["version"] == "1.1.0"

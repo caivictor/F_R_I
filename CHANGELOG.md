@@ -4,6 +4,16 @@ All notable changes to this project are documented below.
 
 ---
 
+## [1.1.0] - 2026-08-30
+
+### Persistent Chat Continuity, Multi-Session History & Security Posture UI
+- **Cross-Session SQLite Continuity**: Added persistent database backing for `chat_sessions`, `chat_messages`, and `conversation_memory` so conversations, entities, and summaries are preserved across reboots.
+- **Multi-Session History Switcher UI**: Added `SessionsModal` and History button in terminal header allowing users to browse, switch between, and manage persistent conversations.
+- **Security Posture & Guardrails Modal**: Added `SecurityModal` and `GET /api/security/audit` endpoint displaying live security controls (WAL mode, timeouts, trade interlocks, secret redaction, and prompt sanitization).
+- **Sub-Agent Progress & Companion Architecture**: Aligned system architecture with the updated PRD: an AI companion that autonomously spins up specialized worker sub-agents on demand with live UI progress trace.
+
+---
+
 ## [1.0.1] - 2026-08-30
 
 ### Context Memory, Multi-Candidate Evaluation & Security Agent
