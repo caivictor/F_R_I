@@ -626,7 +626,7 @@ class ManagerAgent:
             }
 
         # 5. Check for Dividend Distribution Intent
-        dividend_match = re.search(r"\b(?:record|log|add)\s+dividend\s+(?:of\s+)?\$?(\d+(?:\.\d+)?)\s*(?:per\s+share\s+)?(?:for\s+)?([A-Za-z0-9\$\.\:\-]+)", user_message, re.IGNORECASE)
+        dividend_match = re.search(r"\b(?:record|log|add)\s+(?:a\s+)?dividend\s+(?:of\s+)?\$?(\d+(?:\.\d+)?)\s*(?:per\s+share\s+)?(?:for\s+)?([A-Za-z0-9\$\.\:\-]+)", user_message, re.IGNORECASE)
         if dividend_match:
             amt_val = float(dividend_match.group(1))
             ticker_val = dividend_match.group(2).replace("$", "").upper().strip()
@@ -660,7 +660,7 @@ class ManagerAgent:
             }
 
         # 6. Check for Transaction History / Audit Log Intent
-        if re.search(r"\b(transaction history|transactions|trade history|order history|audit log|recent trades|history of orders)\b", cleaned, re.IGNORECASE):
+        if re.search(r"\b(transaction|trade|order|audit)\s+(?:audit\s+)?(history|log|records|trades|orders)\b|transactions|recent trades|audit log", cleaned, re.IGNORECASE):
             await self._emit_step(
                 progress_callback, steps, "manager", "[Manager] Fetching transaction history and audit log from Investment Agent..."
             )
@@ -943,7 +943,7 @@ class ManagerAgent:
 
         # 6. Check for Company / Ticker Analysis Intent
         ticker_query = self._extract_ticker_for_analysis(user_message, session)
-        if ticker_query or any(w in cleaned for w in ["analyze", "analysis", "dossier", "roic", "valuation", "moat", "thesis", "metrics", "fundamentals"]):
+        if ticker_query or any(w in cleaned for w in ["analyze", "analysis", "dossier", "roic", "valuation", "moat", "thesis", "metrics", "fundamentals", "margin", "return on", "p/e", "multiple", "ratios", "profitability", "growth", "capital efficiency"]):
             target = ticker_query if ticker_query else (session.last_ticker or "AAPL")
             session.last_ticker = target
 
