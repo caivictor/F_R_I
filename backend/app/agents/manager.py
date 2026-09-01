@@ -1116,7 +1116,7 @@ class ManagerAgent:
             else:
                 final_response = (
                     f"### Manager Assistant\n\n"
-                    f"### Manager Assistant\n\nI have noted your inquiry: *\"{user_message.strip()}\"*.{context_clause}\n\n"
+                    f"### Manager Assistant\n\nI am your **Manager Agent** overseeing research, analysis, and portfolio operations.{context_clause}\n\n"
                     f"- **Current Portfolio Cash:** `${cash_avail:,.2f}`\n"
                     f"- **Active Positions:** `{holdings_summary}`\n\n"
                     "You can ask me to perform market discovery, conduct in-depth equity dossiers, or execute trade orders with 2-step confirmation."
